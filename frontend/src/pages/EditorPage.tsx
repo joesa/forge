@@ -1,76 +1,41 @@
-import { useState } from 'react'
-import HexLogo from '@/components/shared/HexLogo'
+/* ------------------------------------------------------------------ */
+/*  FORGE — Editor Page                                                */
+/*  Full viewport layout: activity bar + file tree + Monaco editor     */
+/*  + preview pane + chat panel + status bar                           */
+/* ------------------------------------------------------------------ */
 
+import { useState, lazy, Suspense } from 'react'
+import { useParams } from 'react-router-dom'
+import HexLogo from '@/components/shared/HexLogo'
+import FileTree from '@/components/editor/FileTree'
+import EditorTabs from '@/components/editor/EditorTabs'
+import { useEditor } from '@/hooks/useEditor'
+import { useEditorStore } from '@/stores/editorStore'
+
+/* Lazy load Monaco so it doesn't block initial paint */
+const MonacoEditor = lazy(
+  () => import('@/components/editor/MonacoEditor'),
+)
+
+/* ------------------------------------------------------------------ */
+/*  Constants                                                          */
+/* ------------------------------------------------------------------ */
 const activityIcons = ['📁', '🔍', '⚡', '🔀', '🐛', '🧪']
 
-interface FileItem {
-  name: string
-  depth: number
-  type: 'file' | 'dir'
-  status?: 'active' | 'modified' | 'new'
-}
-
-const files: FileItem[] = [
-  { name: 'src', depth: 0, type: 'dir' },
-  { name: 'app', depth: 1, type: 'dir' },
-  { name: 'layout.tsx', depth: 2, type: 'file' },
-  { name: 'page.tsx', depth: 2, type: 'file', status: 'active' },
-  { name: 'globals.css', depth: 2, type: 'file' },
-  { name: 'dashboard', depth: 2, type: 'dir' },
-  { name: 'page.tsx', depth: 3, type: 'file', status: 'modified' },
-  { name: 'components', depth: 1, type: 'dir' },
-  { name: 'Header.tsx', depth: 2, type: 'file' },
-  { name: 'Sidebar.tsx', depth: 2, type: 'file', status: 'new' },
-  { name: 'Chart.tsx', depth: 2, type: 'file' },
-  { name: 'lib', depth: 1, type: 'dir' },
-  { name: 'utils.ts', depth: 2, type: 'file' },
-  { name: 'api.ts', depth: 2, type: 'file' },
-  { name: 'package.json', depth: 0, type: 'file' },
-  { name: 'tsconfig.json', depth: 0, type: 'file' },
-]
-
-const openTabs = [
-  { name: 'page.tsx', modified: false, active: true },
-  { name: 'layout.tsx', modified: false, active: false },
-  { name: 'page.tsx', modified: true, active: false },
-]
-
-const codeLines = [
-  "import { Metadata } from 'next'",
-  "import { DashboardShell } from '@/components/shell'",
-  "import { StatsCards } from '@/components/stats'",
-  "",
-  "export const metadata: Metadata = {",
-  "  title: 'Dashboard | SaaS App',",
-  "  description: 'Analytics dashboard',",
-  "}",
-  "",
-  "export default async function DashboardPage() {",
-  "  const stats = await getStats()",
-  "  const projects = await getProjects()",
-  "",
-  "  return (",
-  "    <DashboardShell>",
-  "      <div className=\"grid gap-4 md:grid-cols-4\">",
-  "        <StatsCards data={stats} />",
-  "      </div>",
-  "      <div className=\"mt-8\">",
-  "        <h2 className=\"text-xl font-bold\">",
-  "          Recent Projects",
-  "        </h2>",
-  "        {projects.map((p) => (",
-  "          <ProjectCard key={p.id} project={p} />",
-  "        ))}",
-  "      </div>",
-  "    </DashboardShell>",
-  "  )",
-  "}",
-]
-
 const chatMessages = [
-  { from: 'user', text: 'Add a chart component to the dashboard that shows weekly active users' },
-  { from: 'ai', text: "I'll add a WAU chart using Recharts. Here's the implementation:", codeBlock: { filename: 'components/Chart.tsx', code: "import { LineChart } from 'recharts'\n\nexport function WAUChart({ data }) {\n  return <LineChart data={data} />\n}" } },
-  { from: 'user', text: 'Can you also add a date range picker?' },
+  {
+    from: 'user' as const,
+    text: 'Add a chart component to the dashboard that shows weekly active users',
+  },
+  {
+    from: 'ai' as const,
+    text: "I'll add a WAU chart using Recharts. Here's the implementation:",
+    codeBlock: {
+      filename: 'components/Chart.tsx',
+      code: "import { LineChart } from 'recharts'\n\nexport function WAUChart({ data }) {\n  return <LineChart data={data} />\n}",
+    },
+  },
+  { from: 'user' as const, text: 'Can you also add a date range picker?' },
 ]
 
 const consoleLines: { time: string; type: 'log' | 'warn' | 'error'; msg: string }[] = [
@@ -80,15 +45,56 @@ const consoleLines: { time: string; type: 'log' | 'warn' | 'error'; msg: string 
   { time: '14:31:42', type: 'log', msg: '[build] Compiled successfully (340ms)' },
 ]
 
+/* ------------------------------------------------------------------ */
+/*  Editor Page Component                                              */
+/* ------------------------------------------------------------------ */
 export default function EditorPage() {
-  const [previewVisible, setPreviewVisible] = useState(true)
+  const { id: projectId } = useParams<{ id: string }>()
+  const { handleContentChange } = useEditor(projectId ?? 'test')
+
+  /* Local UI state */
   const [activeActivity, setActiveActivity] = useState(0)
   const [chatInput, setChatInput] = useState('')
   const [consoleTab, setConsoleTab] = useState<'console' | 'network' | 'errors'>('console')
 
+  /* Store selectors */
+  const previewVisible = useEditorStore((s) => s.previewVisible)
+  const togglePreview = useEditorStore((s) => s.togglePreview)
+  const activeFile = useEditorStore((s) => s.activeFile)
+  const fileContents = useEditorStore((s) => s.fileContents)
+  const modifiedFiles = useEditorStore((s) => s.modifiedFiles)
+
+  /* Count modified files for status bar */
+  const modifiedCount = Object.keys(modifiedFiles).length
+
+  /* Breadcrumb from active file */
+  const breadcrumb = activeFile
+    ? activeFile.split('/').map((part, i, arr) =>
+        i === arr.length - 1 ? (
+          <span key={i} style={{ color: '#63d9ff' }}>{part}</span>
+        ) : (
+          <span key={i}>
+            {part}
+            <span style={{ margin: '0 5px', color: 'rgba(232,232,240,0.18)' }}>›</span>
+          </span>
+        ),
+      )
+    : null
+
   return (
-    <div id="editor-page" style={{ height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden', background: '#04040a' }}>
-      {/* Top bar — 46px */}
+    <div
+      id="editor-page"
+      style={{
+        height: '100vh',
+        display: 'flex',
+        flexDirection: 'column',
+        overflow: 'hidden',
+        background: '#04040a',
+      }}
+    >
+      {/* ============================================================ */}
+      {/*  TOP BAR — 46px                                               */}
+      {/* ============================================================ */}
       <div
         id="editor-topbar"
         style={{
@@ -105,7 +111,9 @@ export default function EditorPage() {
       >
         <HexLogo size={22} wordmarkSize={16} />
         <div style={{ width: 1, height: 22, background: 'rgba(255,255,255,0.08)' }} />
-        <span style={{ fontSize: 12, color: 'rgba(232,232,240,0.55)', cursor: 'pointer' }}>SaaS Dashboard ▼</span>
+        <span style={{ fontSize: 12, color: 'rgba(232,232,240,0.55)', cursor: 'pointer' }}>
+          SaaS Dashboard ▼
+        </span>
         <span
           style={{
             fontFamily: "'JetBrains Mono', monospace",
@@ -121,10 +129,20 @@ export default function EditorPage() {
 
         <div style={{ flex: 1 }} />
 
-        <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: '#ff6b35' }}>● 2 errors</span>
+        {modifiedCount > 0 && (
+          <span
+            style={{
+              fontFamily: "'JetBrains Mono', monospace",
+              fontSize: 9,
+              color: '#ff6b35',
+            }}
+          >
+            ● {modifiedCount} unsaved
+          </span>
+        )}
         <button
           className="btn btn-ghost btn-sm"
-          onClick={() => setPreviewVisible(!previewVisible)}
+          onClick={togglePreview}
           style={{ fontSize: 10 }}
         >
           {previewVisible ? '⊟' : '⊞'} Preview
@@ -149,7 +167,9 @@ export default function EditorPage() {
         </div>
       </div>
 
-      {/* Body */}
+      {/* ============================================================ */}
+      {/*  BODY GRID                                                    */}
+      {/* ============================================================ */}
       <div
         style={{
           flex: 1,
@@ -159,7 +179,9 @@ export default function EditorPage() {
           minHeight: 0,
         }}
       >
-        {/* Activity bar — 46px */}
+        {/* ---------------------------------------------------------- */}
+        {/*  ACTIVITY BAR — 46px                                        */}
+        {/* ---------------------------------------------------------- */}
         <div
           id="activity-bar"
           style={{
@@ -216,148 +238,107 @@ export default function EditorPage() {
           </button>
         </div>
 
-        {/* File tree — 210px */}
-        <div
-          id="file-tree"
-          style={{
-            borderRight: '1px solid rgba(255,255,255,0.06)',
-            display: 'flex',
-            flexDirection: 'column',
-            overflow: 'hidden',
-          }}
-        >
-          <div
-            style={{
-              fontFamily: "'JetBrains Mono', monospace",
-              fontSize: 9,
-              textTransform: 'uppercase',
-              color: 'rgba(232,232,240,0.30)',
-              padding: '9px 12px',
-              borderBottom: '1px solid rgba(255,255,255,0.06)',
-              display: 'flex',
-              justifyContent: 'space-between',
-              letterSpacing: 1,
-            }}
-          >
-            <span>Explorer</span>
-            <span style={{ color: '#63d9ff', cursor: 'pointer' }}>+</span>
-          </div>
-          <div style={{ flex: 1, overflowY: 'auto', padding: '6px 0' }}>
-            {files.map((f, i) => {
-              const dotColor = f.status === 'active' ? '#63d9ff' : f.status === 'modified' ? '#ff6b35' : f.status === 'new' ? '#3dffa0' : f.type === 'dir' ? '#f5c842' : 'transparent'
-              return (
-                <div
-                  key={i}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 6,
-                    padding: `3px 8px 3px ${8 + f.depth * 11}px`,
-                    fontFamily: "'JetBrains Mono', monospace",
-                    fontSize: 11,
-                    color: f.status === 'active' ? '#63d9ff' : f.type === 'dir' ? '#e8e8f0' : 'rgba(232,232,240,0.42)',
-                    background: f.status === 'active' ? 'rgba(99,217,255,0.08)' : 'transparent',
-                    cursor: 'pointer',
-                  }}
-                >
-                  {f.type === 'dir' ? (
-                    <span style={{ color: '#f5c842', fontSize: 8 }}>▶</span>
-                  ) : (
-                    <span style={{ width: 8, height: 8, borderRadius: '50%', background: dotColor, flexShrink: 0 }} />
-                  )}
-                  {f.name}
-                </div>
-              )
-            })}
-          </div>
-        </div>
+        {/* ---------------------------------------------------------- */}
+        {/*  FILE TREE — 210px                                          */}
+        {/* ---------------------------------------------------------- */}
+        <FileTree />
 
-        {/* Main editor area */}
+        {/* ---------------------------------------------------------- */}
+        {/*  MAIN EDITOR AREA                                           */}
+        {/* ---------------------------------------------------------- */}
         <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
           {/* Tab bar */}
-          <div
-            style={{
-              height: 34,
-              borderBottom: '1px solid rgba(255,255,255,0.06)',
-              display: 'flex',
-              overflowX: 'auto',
-              flexShrink: 0,
-            }}
-          >
-            {openTabs.map((tab, i) => (
-              <div
-                key={i}
-                style={{
-                  minWidth: 90,
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 7,
-                  padding: '0 13px',
-                  fontFamily: "'JetBrains Mono', monospace",
-                  fontSize: 10,
-                  color: tab.active ? '#e8e8f0' : 'rgba(232,232,240,0.40)',
-                  borderBottom: tab.active ? '2px solid #63d9ff' : '2px solid transparent',
-                  background: tab.active ? 'rgba(255,255,255,0.02)' : 'transparent',
-                  cursor: 'pointer',
-                }}
-              >
-                {tab.modified && <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#ff6b35' }} />}
-                {tab.name}
-                <span style={{ fontSize: 10, color: 'rgba(232,232,240,0.25)', marginLeft: 'auto' }}>×</span>
-              </div>
-            ))}
-          </div>
+          <EditorTabs />
 
           {/* Breadcrumb */}
-          <div
-            style={{
-              padding: '5px 14px',
-              background: 'rgba(255,255,255,0.015)',
-              borderBottom: '1px solid rgba(255,255,255,0.04)',
-              fontFamily: "'JetBrains Mono', monospace",
-              fontSize: 10,
-              color: 'rgba(232,232,240,0.30)',
-            }}
-          >
-            src › app › dashboard › <span style={{ color: '#63d9ff' }}>page.tsx</span>
-          </div>
+          {activeFile && (
+            <div
+              style={{
+                padding: '5px 14px',
+                background: 'rgba(255,255,255,0.015)',
+                borderBottom: '1px solid rgba(255,255,255,0.04)',
+                fontFamily: "'JetBrains Mono', monospace",
+                fontSize: 10,
+                color: 'rgba(232,232,240,0.30)',
+              }}
+            >
+              {breadcrumb}
+            </div>
+          )}
 
-          {/* Code area */}
+          {/* Monaco Editor */}
           <div
             id="code-editor"
             style={{
               flex: 1,
-              padding: '16px 18px',
               background: '#04040a',
-              overflowY: 'auto',
-              fontFamily: "'JetBrains Mono', monospace",
-              fontSize: 12,
-              lineHeight: 1.85,
+              overflow: 'hidden',
+              minHeight: 0,
             }}
           >
-            {codeLines.map((line, i) => (
-              <div key={i} style={{ display: 'flex' }}>
-                <span
-                  style={{
-                    width: 26,
-                    textAlign: 'right',
-                    marginRight: 14,
-                    color: 'rgba(232,232,240,0.15)',
-                    userSelect: 'none',
-                    flexShrink: 0,
-                  }}
-                >
-                  {i + 1}
-                </span>
-                <span>
-                  {colorize(line)}
-                </span>
+            {activeFile && activeFile in fileContents ? (
+              <Suspense
+                fallback={
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      height: '100%',
+                      background: '#04040a',
+                    }}
+                  >
+                    <span
+                      style={{
+                        fontFamily: "'JetBrains Mono', monospace",
+                        fontSize: 10,
+                        color: 'rgba(232,232,240,0.25)',
+                        letterSpacing: 2,
+                        textTransform: 'uppercase',
+                      }}
+                    >
+                      Loading editor...
+                    </span>
+                  </div>
+                }
+              >
+                <MonacoEditor
+                  filePath={activeFile}
+                  content={fileContents[activeFile] ?? ''}
+                  onChange={handleContentChange}
+                />
+              </Suspense>
+            ) : (
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  height: '100%',
+                }}
+              >
+                <div style={{ textAlign: 'center' }}>
+                  <div style={{ fontSize: 36, marginBottom: 8, opacity: 0.15 }}>⬡</div>
+                  <div
+                    style={{
+                      fontFamily: "'JetBrains Mono', monospace",
+                      fontSize: 10,
+                      color: 'rgba(232,232,240,0.20)',
+                      letterSpacing: 2,
+                      textTransform: 'uppercase',
+                    }}
+                  >
+                    Select a file to edit
+                  </div>
+                </div>
               </div>
-            ))}
+            )}
           </div>
         </div>
 
-        {/* Preview pane — 310px (conditional) */}
+        {/* ---------------------------------------------------------- */}
+        {/*  PREVIEW PANE — 310px (conditional)                         */}
+        {/* ---------------------------------------------------------- */}
         {previewVisible && (
           <div
             id="preview-pane"
@@ -399,7 +380,19 @@ export default function EditorPage() {
                 localhost:3000/dashboard
               </div>
               <button style={{ background: 'none', border: 'none', color: 'rgba(232,232,240,0.40)', cursor: 'pointer', fontSize: 11 }}>📱</button>
-              <button style={{ background: 'rgba(99,217,255,0.08)', border: '1px solid rgba(99,217,255,0.22)', color: '#63d9ff', cursor: 'pointer', fontSize: 11, padding: '2px 4px', borderRadius: 3 }}>💻</button>
+              <button
+                style={{
+                  background: 'rgba(99,217,255,0.08)',
+                  border: '1px solid rgba(99,217,255,0.22)',
+                  color: '#63d9ff',
+                  cursor: 'pointer',
+                  fontSize: 11,
+                  padding: '2px 4px',
+                  borderRadius: 3,
+                }}
+              >
+                💻
+              </button>
             </div>
 
             {/* Preview body */}
@@ -414,7 +407,13 @@ export default function EditorPage() {
             >
               <div style={{ textAlign: 'center' }}>
                 <div style={{ fontSize: 36, marginBottom: 8 }}>⬡</div>
-                <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: 'rgba(232,232,240,0.25)' }}>
+                <div
+                  style={{
+                    fontFamily: "'JetBrains Mono', monospace",
+                    fontSize: 9,
+                    color: 'rgba(232,232,240,0.25)',
+                  }}
+                >
                   PREVIEW LOADING...
                 </div>
               </div>
@@ -442,9 +441,13 @@ export default function EditorPage() {
                       cursor: 'pointer',
                       padding: '2px 6px',
                       borderRadius: 4,
-                      border: consoleTab === tab ? '1px solid rgba(99,217,255,0.25)' : '1px solid transparent',
+                      border: consoleTab === tab
+                        ? '1px solid rgba(99,217,255,0.25)'
+                        : '1px solid transparent',
                       color: consoleTab === tab ? '#63d9ff' : 'rgba(232,232,240,0.35)',
-                      background: consoleTab === tab ? 'rgba(99,217,255,0.08)' : 'transparent',
+                      background: consoleTab === tab
+                        ? 'rgba(99,217,255,0.08)'
+                        : 'transparent',
                       textTransform: 'capitalize',
                     }}
                   >
@@ -456,7 +459,16 @@ export default function EditorPage() {
                 {consoleLines.map((l, i) => (
                   <div key={i} style={{ display: 'flex', gap: 6, padding: '1px 0' }}>
                     <span style={{ color: 'rgba(232,232,240,0.16)' }}>{l.time}</span>
-                    <span style={{ color: l.type === 'warn' ? '#f5c842' : l.type === 'error' ? '#ff6b35' : 'rgba(232,232,240,0.45)' }}>
+                    <span
+                      style={{
+                        color:
+                          l.type === 'warn'
+                            ? '#f5c842'
+                            : l.type === 'error'
+                              ? '#ff6b35'
+                              : 'rgba(232,232,240,0.45)',
+                      }}
+                    >
                       {l.msg}
                     </span>
                   </div>
@@ -478,7 +490,13 @@ export default function EditorPage() {
                 flexShrink: 0,
               }}
             >
-              <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 7, color: 'rgba(232,232,240,0.30)' }}>
+              <span
+                style={{
+                  fontFamily: "'JetBrains Mono', monospace",
+                  fontSize: 7,
+                  color: 'rgba(232,232,240,0.30)',
+                }}
+              >
                 BUILD
               </span>
               <div style={{ flex: 1, display: 'flex', alignItems: 'center' }}>
@@ -494,7 +512,14 @@ export default function EditorPage() {
                       }}
                     />
                     {i < 9 && (
-                      <div style={{ flex: 1, height: 1, background: 'rgba(255,255,255,0.07)', minWidth: 8 }} />
+                      <div
+                        style={{
+                          flex: 1,
+                          height: 1,
+                          background: 'rgba(255,255,255,0.07)',
+                          minWidth: 8,
+                        }}
+                      />
                     )}
                   </div>
                 ))}
@@ -517,7 +542,9 @@ export default function EditorPage() {
           </div>
         )}
 
-        {/* Chat panel — 295px */}
+        {/* ---------------------------------------------------------- */}
+        {/*  CHAT PANEL — 295px                                         */}
+        {/* ---------------------------------------------------------- */}
         <div
           id="chat-panel"
           style={{
@@ -554,8 +581,16 @@ export default function EditorPage() {
               ⚡
             </div>
             <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 12, fontWeight: 700, color: '#e8e8f0' }}>Forge AI</div>
-              <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 8, color: '#3dffa0' }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: '#e8e8f0' }}>
+                Forge AI
+              </div>
+              <div
+                style={{
+                  fontFamily: "'JetBrains Mono', monospace",
+                  fontSize: 8,
+                  color: '#3dffa0',
+                }}
+              >
                 ● active · claude-sonnet-4
               </div>
             </div>
@@ -563,7 +598,16 @@ export default function EditorPage() {
           </div>
 
           {/* Messages */}
-          <div style={{ flex: 1, padding: 12, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 9 }}>
+          <div
+            style={{
+              flex: 1,
+              padding: 12,
+              overflowY: 'auto',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 9,
+            }}
+          >
             {chatMessages.map((msg, i) => (
               <div key={i}>
                 <div
@@ -580,13 +624,17 @@ export default function EditorPage() {
                 </div>
                 <div
                   style={{
-                    background: msg.from === 'user' ? 'rgba(255,255,255,0.04)' : 'rgba(99,217,255,0.08)',
+                    background:
+                      msg.from === 'user'
+                        ? 'rgba(255,255,255,0.04)'
+                        : 'rgba(99,217,255,0.08)',
                     border: `1px solid ${msg.from === 'user' ? 'rgba(255,255,255,0.06)' : 'rgba(99,217,255,0.14)'}`,
                     borderRadius: 8,
                     padding: '9px 11px',
                     fontSize: 11,
                     lineHeight: 1.6,
-                    color: msg.from === 'user' ? 'rgba(232,232,240,0.65)' : '#e8e8f0',
+                    color:
+                      msg.from === 'user' ? 'rgba(232,232,240,0.65)' : '#e8e8f0',
                   }}
                 >
                   {msg.text}
@@ -609,15 +657,40 @@ export default function EditorPage() {
                           alignItems: 'center',
                         }}
                       >
-                        <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: '#63d9ff' }}>
+                        <span
+                          style={{
+                            fontFamily: "'JetBrains Mono', monospace",
+                            fontSize: 9,
+                            color: '#63d9ff',
+                          }}
+                        >
                           {msg.codeBlock.filename}
                         </span>
                         <div style={{ display: 'flex', gap: 4 }}>
-                          <button className="btn btn-ghost" style={{ height: 22, padding: '0 6px', fontSize: 8 }}>Copy</button>
-                          <button className="btn btn-primary" style={{ height: 22, padding: '0 6px', fontSize: 8 }}>Apply</button>
+                          <button
+                            className="btn btn-ghost"
+                            style={{ height: 22, padding: '0 6px', fontSize: 8 }}
+                          >
+                            Copy
+                          </button>
+                          <button
+                            className="btn btn-primary"
+                            style={{ height: 22, padding: '0 6px', fontSize: 8 }}
+                          >
+                            Apply
+                          </button>
                         </div>
                       </div>
-                      <div style={{ padding: '9px 11px', fontFamily: "'JetBrains Mono', monospace", fontSize: 9, lineHeight: 1.7, color: 'rgba(232,232,240,0.65)', whiteSpace: 'pre' }}>
+                      <div
+                        style={{
+                          padding: '9px 11px',
+                          fontFamily: "'JetBrains Mono', monospace",
+                          fontSize: 9,
+                          lineHeight: 1.7,
+                          color: 'rgba(232,232,240,0.65)',
+                          whiteSpace: 'pre',
+                        }}
+                      >
                         {msg.codeBlock.code}
                       </div>
                     </div>
@@ -628,9 +701,22 @@ export default function EditorPage() {
           </div>
 
           {/* Input area */}
-          <div style={{ padding: '9px 10px', borderTop: '1px solid rgba(255,255,255,0.06)', flexShrink: 0 }}>
+          <div
+            style={{
+              padding: '9px 10px',
+              borderTop: '1px solid rgba(255,255,255,0.06)',
+              flexShrink: 0,
+            }}
+          >
             {/* Command chips */}
-            <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 6 }}>
+            <div
+              style={{
+                display: 'flex',
+                gap: 4,
+                flexWrap: 'wrap',
+                marginBottom: 6,
+              }}
+            >
               {['/build', '/deploy', '/test', '/lint'].map((cmd) => (
                 <button
                   key={cmd}
@@ -691,7 +777,9 @@ export default function EditorPage() {
         </div>
       </div>
 
-      {/* Status bar — 22px */}
+      {/* ============================================================ */}
+      {/*  STATUS BAR — 22px                                            */}
+      {/* ============================================================ */}
       <div
         id="editor-statusbar"
         style={{
@@ -710,52 +798,11 @@ export default function EditorPage() {
       >
         <span>⚡ Forge</span>
         <span>TypeScript</span>
-        <span>Ln 10, Col 24</span>
-        <span>No errors</span>
+        <span>Ln 1, Col 1</span>
+        <span>{modifiedCount > 0 ? `${modifiedCount} unsaved` : 'No changes'}</span>
         <span>Sandbox: ● Running</span>
         <span>main</span>
       </div>
     </div>
   )
-}
-
-/** Minimal syntax coloring for demo */
-function colorize(line: string): React.ReactNode {
-  if (!line) return '\u00A0'
-  // Simple keyword highlighting
-  const parts: React.ReactNode[] = []
-  const remaining = line
-
-  const patterns: [RegExp, string][] = [
-    [/^(import|export|from|const|async|function|return|default)\b/, '#b06bff'],
-    [/^(\/\/.*)$/, 'rgba(232,232,240,0.28)'],
-    [/'[^']*'/, '#3dffa0'],
-    [/"[^"]*"/, '#3dffa0'],
-    [/`[^`]*`/, '#3dffa0'],
-    [/\b(Metadata|DashboardShell|StatsCards|ProjectCard)\b/, '#f5c842'],
-    [/\b(className|data|key|project|stats|projects|title|description|id|p)\b/, '#e8e8f0'],
-  ]
-
-  // Simple approach: just return the line with basic coloring
-  if (remaining.includes('import') || remaining.includes('export') || remaining.includes('const') || remaining.includes('return') || remaining.includes('async') || remaining.includes('function') || remaining.includes('default')) {
-    const words = remaining.split(/(\s+|[{}()=<>/,;.])/)
-    return (
-      <>
-        {words.map((w, i) => {
-          const keywords = ['import', 'export', 'from', 'const', 'async', 'function', 'return', 'default']
-          const types = ['Metadata', 'DashboardShell', 'StatsCards', 'ProjectCard']
-          if (keywords.includes(w)) return <span key={i} style={{ color: '#b06bff' }}>{w}</span>
-          if (types.includes(w)) return <span key={i} style={{ color: '#f5c842' }}>{w}</span>
-          if (w.startsWith("'") || w.startsWith('"')) return <span key={i} style={{ color: '#3dffa0' }}>{w}</span>
-          if (['=', '<', '>', '/', '{', '}', '(', ')', '.'].includes(w)) return <span key={i} style={{ color: '#ff6b35' }}>{w}</span>
-          return <span key={i}>{w}</span>
-        })}
-      </>
-    )
-  }
-
-  // Just dump unmatched content
-  void patterns
-  parts.push(<span key="rest">{remaining || '\u00A0'}</span>)
-  return <>{parts}</>
 }
