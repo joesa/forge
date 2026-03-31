@@ -1,0 +1,1 @@
+/home/joe/miniconda3/envs/pglocal/bin/postgres "-D" "/home/joe/repos/forge/backend/.pgdata" "-p" "5433" "-k" "/tmp"
