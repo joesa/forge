@@ -51,5 +51,5 @@ architecture and a live preview system.
 
 ## Build Status (update as you progress)
 Phase: 1 — Foundation
-Completed: (none yet)
-Next: Session 1.1 — Backend project setup
+Completed: Session 1.1 — Backend project setup
+Next: Session 1.2 — Database models & Alembic migrations
