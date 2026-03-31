@@ -58,6 +58,9 @@ class Settings(BaseSettings):
     ANTHROPIC_API_KEY: str = ""
     OPENAI_API_KEY: str = ""
 
+    # ── Cloudflare Turnstile ────────────────────────────────────────
+    TURNSTILE_SECRET_KEY: str = ""
+
     # ── Monitoring ───────────────────────────────────────────────────
     SENTRY_DSN: str = ""
 

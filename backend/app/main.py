@@ -14,6 +14,7 @@ from fastapi.responses import JSONResponse
 
 from app.config import settings
 from app.core.redis import close_redis
+from app.api.v1.auth import router as auth_router
 from app.middleware.auth import AuthMiddleware
 from app.middleware.logging import LoggingMiddleware
 from app.middleware.rate_limit import RateLimitMiddleware
@@ -91,3 +92,7 @@ app.add_middleware(RequestIdMiddleware)
 async def health_check() -> JSONResponse:
     """Lightweight liveness probe."""
     return JSONResponse(content={"status": "ok"})
+
+
+# ── API routers ──────────────────────────────────────────────────────
+app.include_router(auth_router)
