@@ -52,4 +52,7 @@ architecture and a live preview system.
 ## Build Status (update as you progress)
 Phase: 1 — Foundation
 Completed: Session 1.1 — Backend project setup
-Next: Session 1.2 — Database models & Alembic migrations
+Completed: Session 1.2 — Database models & Alembic migrations
+Completed: Session 1.3 — Auth API & Projects API
+Completed: Session 1.4 — Frontend scaffold (React + Vite + TypeScript + Tailwind + design system)
+Next: Session 1.5 — Frontend pages & components

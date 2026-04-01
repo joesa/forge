@@ -1,5 +1,6 @@
 import { lazy, Suspense } from 'react'
 import { Routes, Route } from 'react-router-dom'
+import RequireAuth from '@/components/auth/RequireAuth'
 
 /* ------------------------------------------------------------------ */
 /*  Lazy-load all page components                                      */
@@ -80,28 +81,28 @@ function App() {
         <Route path="/register" element={<RegisterPage />} />
         <Route path="/onboarding" element={<OnboardingPage />} />
 
-        {/* Main App */}
-        <Route path="/dashboard" element={<DashboardPage />} />
-        <Route path="/projects" element={<ProjectsPage />} />
-        <Route path="/projects/new" element={<NewProjectPage />} />
-        <Route path="/projects/:id/editor" element={<EditorPage />} />
+        {/* Main App — requires authentication */}
+        <Route path="/dashboard" element={<RequireAuth><DashboardPage /></RequireAuth>} />
+        <Route path="/projects" element={<RequireAuth><ProjectsPage /></RequireAuth>} />
+        <Route path="/projects/new" element={<RequireAuth><NewProjectPage /></RequireAuth>} />
+        <Route path="/projects/:id/editor" element={<RequireAuth><EditorPage /></RequireAuth>} />
 
-        {/* Ideation */}
-        <Route path="/ideate" element={<IdeationPage />} />
-        <Route path="/ideate/questionnaire/:id" element={<QuestionnairePage />} />
-        <Route path="/ideate/ideas/:id" element={<IdeasPage />} />
+        {/* Ideation — requires authentication */}
+        <Route path="/ideate" element={<RequireAuth><IdeationPage /></RequireAuth>} />
+        <Route path="/ideate/questionnaire/:id" element={<RequireAuth><QuestionnairePage /></RequireAuth>} />
+        <Route path="/ideate/ideas/:id" element={<RequireAuth><IdeasPage /></RequireAuth>} />
 
-        {/* Pipeline */}
-        <Route path="/pipeline/:id" element={<PipelinePage />} />
+        {/* Pipeline — requires authentication */}
+        <Route path="/pipeline/:id" element={<RequireAuth><PipelinePage /></RequireAuth>} />
 
-        {/* Settings */}
-        <Route path="/settings/profile" element={<ProfilePage />} />
-        <Route path="/settings/ai-providers" element={<AIProvidersPage />} />
-        <Route path="/settings/model-routing" element={<ModelRoutingPage />} />
-        <Route path="/settings/integrations" element={<IntegrationsPage />} />
-        <Route path="/settings/api-keys" element={<ApiKeysPage />} />
-        <Route path="/settings/security" element={<SecurityPage />} />
-        <Route path="/settings/billing" element={<BillingPage />} />
+        {/* Settings — requires authentication */}
+        <Route path="/settings/profile" element={<RequireAuth><ProfilePage /></RequireAuth>} />
+        <Route path="/settings/ai-providers" element={<RequireAuth><AIProvidersPage /></RequireAuth>} />
+        <Route path="/settings/model-routing" element={<RequireAuth><ModelRoutingPage /></RequireAuth>} />
+        <Route path="/settings/integrations" element={<RequireAuth><IntegrationsPage /></RequireAuth>} />
+        <Route path="/settings/api-keys" element={<RequireAuth><ApiKeysPage /></RequireAuth>} />
+        <Route path="/settings/security" element={<RequireAuth><SecurityPage /></RequireAuth>} />
+        <Route path="/settings/billing" element={<RequireAuth><BillingPage /></RequireAuth>} />
 
         {/* Fallback — redirect to landing */}
         <Route path="*" element={<LandingPage />} />

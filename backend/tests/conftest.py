@@ -25,6 +25,11 @@ os.environ.update(
         "NHOST_ADMIN_SECRET": "test-admin-secret",
         "REDIS_URL": "redis://localhost:6379/1",
         "SENTRY_DSN": "",
+        # R2 / Cloudflare — test values (never hit real R2 in tests)
+        "CLOUDFLARE_ACCOUNT_ID": "test-account-id",
+        "R2_ACCESS_KEY_ID": "test-r2-key",
+        "R2_SECRET_ACCESS_KEY": "test-r2-secret",
+        "R2_BUCKET_NAME": "forge-test-bucket",
     }
 )
 

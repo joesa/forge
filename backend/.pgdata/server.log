@@ -13,3 +13,9 @@
 2026-03-31 01:40:26.292 CDT [170322] LOG:  checkpoint complete: wrote 35 buffers (0.2%); 0 WAL file(s) added, 0 removed, 0 recycled; write=3.422 s, sync=0.006 s, total=3.446 s; sync files=22, longest=0.004 s, average=0.001 s; distance=182 kB, estimate=3400 kB; lsn=0/19F7B90, redo lsn=0/19F7B58
 2026-03-31 02:35:23.146 CDT [170322] LOG:  checkpoint starting: time
 2026-03-31 02:35:24.667 CDT [170322] LOG:  checkpoint complete: wrote 16 buffers (0.1%); 0 WAL file(s) added, 0 removed, 0 recycled; write=1.508 s, sync=0.005 s, total=1.522 s; sync files=17, longest=0.003 s, average=0.001 s; distance=64 kB, estimate=3067 kB; lsn=0/1A07C90, redo lsn=0/1A07C58
+2026-03-31 13:19:03.381 CDT [170321] LOG:  received smart shutdown request
+2026-03-31 13:19:03.384 CDT [170321] LOG:  background worker "logical replication launcher" (PID 170327) exited with exit code 1
+2026-03-31 13:19:03.384 CDT [170322] LOG:  shutting down
+2026-03-31 13:19:03.389 CDT [170322] LOG:  checkpoint starting: shutdown immediate
+2026-03-31 13:19:03.397 CDT [170322] LOG:  checkpoint complete: wrote 0 buffers (0.0%); 0 WAL file(s) added, 0 removed, 0 recycled; write=0.001 s, sync=0.001 s, total=0.013 s; sync files=0, longest=0.000 s, average=0.000 s; distance=0 kB, estimate=2760 kB; lsn=0/1A07D40, redo lsn=0/1A07D40
+2026-03-31 13:19:03.404 CDT [170321] LOG:  database system is shut down
