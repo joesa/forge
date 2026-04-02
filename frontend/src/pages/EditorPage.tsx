@@ -9,6 +9,7 @@ import { useParams } from 'react-router-dom'
 import HexLogo from '@/components/shared/HexLogo'
 import FileTree from '@/components/editor/FileTree'
 import EditorTabs from '@/components/editor/EditorTabs'
+import PreviewPane from '@/components/editor/PreviewPane'
 import { useEditor } from '@/hooks/useEditor'
 import { useEditorStore } from '@/stores/editorStore'
 
@@ -38,13 +39,6 @@ const chatMessages = [
   { from: 'user' as const, text: 'Can you also add a date range picker?' },
 ]
 
-const consoleLines: { time: string; type: 'log' | 'warn' | 'error'; msg: string }[] = [
-  { time: '14:32:01', type: 'log', msg: '[HMR] Updated modules: dashboard/page.tsx' },
-  { time: '14:31:58', type: 'log', msg: 'GET /api/stats 200 OK (12ms)' },
-  { time: '14:31:55', type: 'warn', msg: 'React: Missing key prop in ProjectCard list' },
-  { time: '14:31:42', type: 'log', msg: '[build] Compiled successfully (340ms)' },
-]
-
 /* ------------------------------------------------------------------ */
 /*  Editor Page Component                                              */
 /* ------------------------------------------------------------------ */
@@ -55,7 +49,6 @@ export default function EditorPage() {
   /* Local UI state */
   const [activeActivity, setActiveActivity] = useState(0)
   const [chatInput, setChatInput] = useState('')
-  const [consoleTab, setConsoleTab] = useState<'console' | 'network' | 'errors'>('console')
 
   /* Store selectors */
   const previewVisible = useEditorStore((s) => s.previewVisible)
@@ -339,208 +332,7 @@ export default function EditorPage() {
         {/* ---------------------------------------------------------- */}
         {/*  PREVIEW PANE — 310px (conditional)                         */}
         {/* ---------------------------------------------------------- */}
-        {previewVisible && (
-          <div
-            id="preview-pane"
-            style={{
-              borderLeft: '1px solid rgba(255,255,255,0.06)',
-              display: 'flex',
-              flexDirection: 'column',
-              overflow: 'hidden',
-            }}
-          >
-            {/* Preview toolbar */}
-            <div
-              style={{
-                height: 38,
-                background: 'rgba(4,4,10,0.95)',
-                borderBottom: '1px solid rgba(255,255,255,0.06)',
-                display: 'flex',
-                alignItems: 'center',
-                padding: '0 10px',
-                gap: 5,
-                flexShrink: 0,
-              }}
-            >
-              <button style={{ background: 'none', border: 'none', color: 'rgba(232,232,240,0.40)', cursor: 'pointer', fontSize: 11 }}>←</button>
-              <button style={{ background: 'none', border: 'none', color: 'rgba(232,232,240,0.40)', cursor: 'pointer', fontSize: 11 }}>→</button>
-              <div
-                style={{
-                  flex: 1,
-                  fontFamily: "'JetBrains Mono', monospace",
-                  fontSize: 9,
-                  color: 'rgba(232,232,240,0.30)',
-                  background: 'rgba(255,255,255,0.04)',
-                  borderRadius: 4,
-                  padding: '4px 8px',
-                  overflow: 'hidden',
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                localhost:3000/dashboard
-              </div>
-              <button style={{ background: 'none', border: 'none', color: 'rgba(232,232,240,0.40)', cursor: 'pointer', fontSize: 11 }}>📱</button>
-              <button
-                style={{
-                  background: 'rgba(99,217,255,0.08)',
-                  border: '1px solid rgba(99,217,255,0.22)',
-                  color: '#63d9ff',
-                  cursor: 'pointer',
-                  fontSize: 11,
-                  padding: '2px 4px',
-                  borderRadius: 3,
-                }}
-              >
-                💻
-              </button>
-            </div>
-
-            {/* Preview body */}
-            <div
-              style={{
-                flex: 1,
-                background: '#04040a',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-            >
-              <div style={{ textAlign: 'center' }}>
-                <div style={{ fontSize: 36, marginBottom: 8 }}>⬡</div>
-                <div
-                  style={{
-                    fontFamily: "'JetBrains Mono', monospace",
-                    fontSize: 9,
-                    color: 'rgba(232,232,240,0.25)',
-                  }}
-                >
-                  PREVIEW LOADING...
-                </div>
-              </div>
-            </div>
-
-            {/* Dev console */}
-            <div
-              id="dev-console"
-              style={{
-                background: 'rgba(4,4,10,0.97)',
-                borderTop: '1px solid rgba(255,255,255,0.06)',
-                flexShrink: 0,
-                maxHeight: 100,
-                overflow: 'hidden',
-              }}
-            >
-              <div style={{ display: 'flex', gap: 2, padding: '6px 10px 0' }}>
-                {(['console', 'network', 'errors'] as const).map((tab) => (
-                  <button
-                    key={tab}
-                    onClick={() => setConsoleTab(tab)}
-                    style={{
-                      fontFamily: "'JetBrains Mono', monospace",
-                      fontSize: 9,
-                      cursor: 'pointer',
-                      padding: '2px 6px',
-                      borderRadius: 4,
-                      border: consoleTab === tab
-                        ? '1px solid rgba(99,217,255,0.25)'
-                        : '1px solid transparent',
-                      color: consoleTab === tab ? '#63d9ff' : 'rgba(232,232,240,0.35)',
-                      background: consoleTab === tab
-                        ? 'rgba(99,217,255,0.08)'
-                        : 'transparent',
-                      textTransform: 'capitalize',
-                    }}
-                  >
-                    {tab}
-                  </button>
-                ))}
-              </div>
-              <div style={{ padding: '4px 10px', fontFamily: "'JetBrains Mono', monospace", fontSize: 9 }}>
-                {consoleLines.map((l, i) => (
-                  <div key={i} style={{ display: 'flex', gap: 6, padding: '1px 0' }}>
-                    <span style={{ color: 'rgba(232,232,240,0.16)' }}>{l.time}</span>
-                    <span
-                      style={{
-                        color:
-                          l.type === 'warn'
-                            ? '#f5c842'
-                            : l.type === 'error'
-                              ? '#ff6b35'
-                              : 'rgba(232,232,240,0.45)',
-                      }}
-                    >
-                      {l.msg}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Snapshot timeline */}
-            <div
-              id="snapshot-timeline"
-              style={{
-                height: 38,
-                background: 'rgba(4,4,10,0.95)',
-                borderTop: '1px solid rgba(255,255,255,0.06)',
-                display: 'flex',
-                alignItems: 'center',
-                padding: '0 10px',
-                gap: 5,
-                flexShrink: 0,
-              }}
-            >
-              <span
-                style={{
-                  fontFamily: "'JetBrains Mono', monospace",
-                  fontSize: 7,
-                  color: 'rgba(232,232,240,0.30)',
-                }}
-              >
-                BUILD
-              </span>
-              <div style={{ flex: 1, display: 'flex', alignItems: 'center' }}>
-                {Array.from({ length: 10 }, (_, i) => (
-                  <div key={i} style={{ display: 'flex', alignItems: 'center' }}>
-                    <div
-                      style={{
-                        width: 8,
-                        height: 8,
-                        borderRadius: '50%',
-                        background: i < 7 ? '#3dffa0' : 'rgba(232,232,240,0.15)',
-                        flexShrink: 0,
-                      }}
-                    />
-                    {i < 9 && (
-                      <div
-                        style={{
-                          flex: 1,
-                          height: 1,
-                          background: 'rgba(255,255,255,0.07)',
-                          minWidth: 8,
-                        }}
-                      />
-                    )}
-                  </div>
-                ))}
-              </div>
-              <div
-                style={{
-                  width: 8,
-                  height: 8,
-                  borderRadius: '50%',
-                  background: '#3dffa0',
-                  animation: 'jade-pulse 2s ease-in-out infinite',
-                  cursor: 'pointer',
-                  marginLeft: 4,
-                }}
-              />
-              <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 7, color: '#3dffa0' }}>
-                ● LIVE
-              </span>
-            </div>
-          </div>
-        )}
+        {previewVisible && <PreviewPane />}
 
         {/* ---------------------------------------------------------- */}
         {/*  CHAT PANEL — 295px                                         */}
