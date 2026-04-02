@@ -9,7 +9,8 @@ architecture and a live preview system.
 ## Technology Stack
 
 ### Backend
-- Python 3.12, FastAPI (fully async), PostgreSQL 16 (Nhost)
+- Python 3.12, FastAPI (async), PostgreSQL 16 (Northflank managed addon)
+- Nhost: JWT auth only — JWKS validation, no database hosting
 - PgBouncer (transaction mode, 1000 conns), 2x read replicas
 - SQLAlchemy 2.0 async, Alembic, Upstash Redis, Pinecone, Cloudflare R2
 - Nhost Auth (JWT/JWKS), AES-256-GCM encryption
@@ -55,4 +56,5 @@ Completed: Session 1.1 — Backend project setup
 Completed: Session 1.2 — Database models & Alembic migrations
 Completed: Session 1.3 — Auth API & Projects API
 Completed: Session 1.4 — Frontend scaffold (React + Vite + TypeScript + Tailwind + design system)
-Next: Session 1.5 — Frontend pages & components
+Completed: Session 1.5 — LangGraph pipeline orchestration layer (6-stage graph, 12 gates, API + WebSocket)
+Next: Session 1.6 — Frontend pages & components

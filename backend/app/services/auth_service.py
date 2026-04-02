@@ -14,6 +14,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
+from app.core.database import get_write_session
 from app.models.user import User
 
 logger = structlog.get_logger(__name__)
@@ -33,13 +34,11 @@ class NhostAuthError(Exception):
 # ── Helpers ──────────────────────────────────────────────────────────
 
 def _nhost_url(path: str) -> str:
-    """Build full Nhost Auth URL from the configured base."""
     base = settings.NHOST_AUTH_URL.rstrip("/")
     return f"{base}{path}"
 
 
 def _admin_headers() -> dict[str, str]:
-    """Headers for Nhost admin-level requests."""
     return {
         "Content-Type": "application/json",
         "x-hasura-admin-secret": settings.NHOST_ADMIN_SECRET,
@@ -54,15 +53,18 @@ async def register_user(
     display_name: str,
 ) -> dict:
     """
-    Register a new user via Nhost Auth.
+    Register a new user via Nhost Auth, then persist a user record
+    in the Northflank PostgreSQL database.
 
-    Returns the Nhost response dict containing session + user data.
+    Step 1: Create auth identity in Nhost (handles password hashing,
+            email verification, JWT issuance).
+    Step 2: Create User row in our database using Nhost's user ID
+            as the primary key so the two systems stay in sync.
 
     Raises
     ------
     NhostAuthError
-        If Nhost rejects the registration (duplicate email, weak
-        password, etc.).
+        If Nhost rejects the registration (duplicate email, etc.).
     """
     payload = {
         "email": email,
@@ -72,6 +74,7 @@ async def register_user(
         },
     }
 
+    # Step 1 — create auth identity in Nhost
     async with httpx.AsyncClient(timeout=_NHOST_TIMEOUT) as client:
         resp = await client.post(
             _nhost_url("/v1/signup/email-password"),
@@ -82,26 +85,94 @@ async def register_user(
     if resp.status_code >= 400:
         body = resp.json() if resp.headers.get("content-type", "").startswith("application/json") else {}
         detail = body.get("message", resp.text)
-        logger.warning(
-            "nhost_register_failed",
-            status=resp.status_code,
-            detail=detail,
-        )
+        logger.warning("nhost_register_failed", status=resp.status_code, detail=detail)
         raise NhostAuthError(resp.status_code, detail)
 
-    return resp.json()
+    nhost_data = resp.json()
+
+    # Step 2 — persist user in Northflank PostgreSQL
+    # Use the Nhost user ID as our primary key so the two systems
+    # are permanently linked. If this write fails, the user exists
+    # in Nhost but not in our DB — that's caught on next login via
+    # get_or_create_user_on_login().
+    nhost_user = nhost_data.get("user", {})
+    nhost_user_id = nhost_user.get("id")
+
+    if nhost_user_id:
+        async with get_write_session() as db:
+            # Guard against duplicate inserts (e.g. retry after network error)
+            existing = await db.get(User, uuid.UUID(nhost_user_id))
+            if not existing:
+                user = User(
+                    id=uuid.UUID(nhost_user_id),
+                    email=email,
+                    display_name=display_name,
+                    onboarded=False,
+                    plan="free",
+                )
+                db.add(user)
+                await db.commit()
+                logger.info(
+                    "user_created_in_db",
+                    user_id=str(nhost_user_id),
+                    email=email,
+                )
+    else:
+        # Nhost didn't return a user ID — log but don't fail registration.
+        # The user record will be created on first successful login
+        # via get_or_create_user_on_login().
+        logger.warning(
+            "nhost_register_no_user_id",
+            email=email,
+            response_keys=list(nhost_data.keys()),
+        )
+
+    return nhost_data
+
+
+async def get_or_create_user_on_login(
+    nhost_user_id: str,
+    email: str,
+    display_name: str,
+) -> User:
+    """
+    Called after successful Nhost login to ensure the user row
+    exists in our database.
+
+    This is the safety net for users who registered before the
+    DB write was in place, or when the write failed during registration.
+    Uses get_write_session() because it may INSERT.
+    """
+    async with get_write_session() as db:
+        user_uuid = uuid.UUID(nhost_user_id)
+        user = await db.get(User, user_uuid)
+
+        if user is None:
+            user = User(
+                id=user_uuid,
+                email=email,
+                display_name=display_name or email.split("@")[0],
+                onboarded=False,
+                plan="free",
+            )
+            db.add(user)
+            await db.commit()
+            await db.refresh(user)
+            logger.info(
+                "user_created_on_login",
+                user_id=nhost_user_id,
+                email=email,
+            )
+
+        return user
 
 
 async def login_user(email: str, password: str) -> dict:
     """
-    Authenticate via Nhost Auth and return session data.
+    Authenticate via Nhost Auth, then ensure the user row exists
+    in our Northflank PostgreSQL database.
 
-    Returns dict with keys: session.accessToken, session.refreshToken, etc.
-
-    Raises
-    ------
-    NhostAuthError
-        On invalid credentials or other Nhost errors.
+    Returns dict with session tokens plus our User record.
     """
     payload = {"email": email, "password": password}
 
@@ -115,27 +186,25 @@ async def login_user(email: str, password: str) -> dict:
     if resp.status_code >= 400:
         body = resp.json() if resp.headers.get("content-type", "").startswith("application/json") else {}
         detail = body.get("message", resp.text)
-        logger.warning(
-            "nhost_login_failed",
-            status=resp.status_code,
-            detail=detail,
-        )
+        logger.warning("nhost_login_failed", status=resp.status_code, detail=detail)
         raise NhostAuthError(resp.status_code, detail)
 
-    return resp.json()
+    nhost_data = resp.json()
+
+    # Ensure user row exists in our DB (safety net for edge cases)
+    nhost_user = nhost_data.get("user", {})
+    if nhost_user.get("id"):
+        await get_or_create_user_on_login(
+            nhost_user_id=nhost_user["id"],
+            email=nhost_user.get("email", email),
+            display_name=nhost_user.get("displayName", ""),
+        )
+
+    return nhost_data
 
 
 async def refresh_tokens(refresh_token: str) -> dict:
-    """
-    Exchange a refresh token for new access + refresh tokens.
-
-    Returns dict with ``accessToken`` and ``refreshToken``.
-
-    Raises
-    ------
-    NhostAuthError
-        If the refresh token is invalid or expired.
-    """
+    """Exchange a refresh token for new access + refresh tokens."""
     payload = {"refreshToken": refresh_token}
 
     async with httpx.AsyncClient(timeout=_NHOST_TIMEOUT) as client:
@@ -148,11 +217,7 @@ async def refresh_tokens(refresh_token: str) -> dict:
     if resp.status_code >= 400:
         body = resp.json() if resp.headers.get("content-type", "").startswith("application/json") else {}
         detail = body.get("message", resp.text)
-        logger.warning(
-            "nhost_refresh_failed",
-            status=resp.status_code,
-            detail=detail,
-        )
+        logger.warning("nhost_refresh_failed", status=resp.status_code, detail=detail)
         raise NhostAuthError(resp.status_code, detail)
 
     return resp.json()
@@ -163,9 +228,9 @@ async def get_current_user(
     session: AsyncSession,
 ) -> User | None:
     """
-    Fetch user from **our** database by ID.
+    Fetch user from Northflank PostgreSQL by ID.
 
-    Uses a read session (caller must supply a replica-bound session).
+    Caller must supply a read-replica-bound session (get_read_session).
     """
     stmt = select(User).where(User.id == user_id)
     result = await session.execute(stmt)
@@ -173,14 +238,7 @@ async def get_current_user(
 
 
 async def logout_user(access_token: str) -> None:
-    """
-    Sign out via Nhost Auth (invalidates the refresh token family).
-
-    Raises
-    ------
-    NhostAuthError
-        If Nhost rejects the signout request.
-    """
+    """Sign out via Nhost Auth (invalidates the refresh token family)."""
     async with httpx.AsyncClient(timeout=_NHOST_TIMEOUT) as client:
         resp = await client.post(
             _nhost_url("/v1/signout"),
@@ -194,54 +252,29 @@ async def logout_user(access_token: str) -> None:
     if resp.status_code >= 400:
         body = resp.json() if resp.headers.get("content-type", "").startswith("application/json") else {}
         detail = body.get("message", resp.text)
-        logger.warning(
-            "nhost_logout_failed",
-            status=resp.status_code,
-            detail=detail,
-        )
+        logger.warning("nhost_logout_failed", status=resp.status_code, detail=detail)
         raise NhostAuthError(resp.status_code, detail)
 
 
 async def forgot_password(email: str) -> None:
     """
     Trigger Nhost password-reset email.
-
-    Always returns None to avoid leaking whether an email exists.
-
-    Raises
-    ------
-    NhostAuthError
-        On unexpected Nhost errors (not user-facing).
+    Swallows 4xx to avoid email enumeration.
     """
-    payload = {"email": email}
-
     async with httpx.AsyncClient(timeout=_NHOST_TIMEOUT) as client:
         resp = await client.post(
             _nhost_url("/v1/user/password/reset"),
-            json=payload,
+            json={"email": email},
             headers={"Content-Type": "application/json"},
         )
 
-    # We intentionally swallow 4xx here to avoid email enumeration.
-    # Only log server errors.
     if resp.status_code >= 500:
-        logger.error(
-            "nhost_forgot_password_error",
-            status=resp.status_code,
-        )
+        logger.error("nhost_forgot_password_error", status=resp.status_code)
         raise NhostAuthError(resp.status_code, "Password reset service error")
 
 
 async def reset_password(token: str, new_password: str) -> None:
-    """
-    Complete the password reset flow with the emailed token.
-
-    Raises
-    ------
-    NhostAuthError
-        If the token is invalid/expired or new password doesn't meet
-        Nhost requirements.
-    """
+    """Complete the password reset flow with the emailed token."""
     payload = {"ticket": token, "newPassword": new_password}
 
     async with httpx.AsyncClient(timeout=_NHOST_TIMEOUT) as client:
@@ -254,9 +287,5 @@ async def reset_password(token: str, new_password: str) -> None:
     if resp.status_code >= 400:
         body = resp.json() if resp.headers.get("content-type", "").startswith("application/json") else {}
         detail = body.get("message", resp.text)
-        logger.warning(
-            "nhost_reset_password_failed",
-            status=resp.status_code,
-            detail=detail,
-        )
+        logger.warning("nhost_reset_password_failed", status=resp.status_code, detail=detail)
         raise NhostAuthError(resp.status_code, detail)

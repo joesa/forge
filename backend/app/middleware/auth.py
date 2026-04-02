@@ -81,6 +81,10 @@ class AuthMiddleware(BaseHTTPMiddleware):
         if request.url.path in PUBLIC_PATHS:
             return await call_next(request)
 
+        # Skip WebSocket upgrade requests (auth handled inside WS endpoint)
+        if request.url.path.startswith("/api/v1/pipeline/") and request.url.path.endswith("/stream"):
+            return await call_next(request)
+
         auth_header = request.headers.get("Authorization")
         if not auth_header or not auth_header.startswith("Bearer "):
             return JSONResponse(
