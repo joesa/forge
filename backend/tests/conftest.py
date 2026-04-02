@@ -23,7 +23,7 @@ os.environ.update(
         "DATABASE_READ_URL": "postgresql+asyncpg://test:test@localhost:5432/forge_test",
         "NHOST_AUTH_URL": "https://auth.test.nhost.run",
         "NHOST_ADMIN_SECRET": "test-admin-secret",
-        "REDIS_URL": "redis://localhost:6379/1",
+        "REDIS_URL": "redis://default:PASS@YOUR_UPSTASH_HOST:6379",
         "SENTRY_DSN": "",
         # R2 / Cloudflare — test values (never hit real R2 in tests)
         "CLOUDFLARE_ACCOUNT_ID": "test-account-id",

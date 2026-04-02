@@ -76,5 +76,14 @@ class PipelineState(TypedDict, total=False):
     injected_schemas: dict[str, str]          # Layer 2: schema strings
     coherence_report: dict[str, object]       # Layer 4: coherence result
 
+    # ── Build identity ───────────────────────────────────────────────
+    build_id: str                             # Unique build identifier
+
+    # ── Build snapshots ──────────────────────────────────────────────
+    snapshot_urls: list[str]                  # R2 URLs of captured snapshots
+
+    # ── Review result ────────────────────────────────────────────────
+    review_result: dict[str, object]          # review_agent's final outcome
+
     # ── Sandbox ──────────────────────────────────────────────────────
     sandbox_id: str | None

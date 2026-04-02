@@ -25,8 +25,8 @@ _SPEC_AGENTS = (
 )
 
 _BUILD_AGENTS = (
-    "prd", "design_system", "layout", "component", "page",
-    "api", "state", "integration", "config", "quality",
+    "scaffold", "router", "component", "page", "api",
+    "db", "auth", "style", "test", "review",
 )
 
 # Required fields per agent for G2 schema validation
