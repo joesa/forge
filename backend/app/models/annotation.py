@@ -41,10 +41,10 @@ class Annotation(Base):
         ForeignKey("projects.id", ondelete="CASCADE"),
         nullable=False,
     )
-    build_id: Mapped[uuid.UUID] = mapped_column(
+    build_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("builds.id", ondelete="CASCADE"),
-        nullable=False,
+        nullable=True,
     )
     user_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
@@ -54,6 +54,8 @@ class Annotation(Base):
     x_pct: Mapped[float] = mapped_column(Float, nullable=False)
     y_pct: Mapped[float] = mapped_column(Float, nullable=False)
     page_route: Mapped[str | None] = mapped_column(String(512))
+    css_selector: Mapped[str | None] = mapped_column(String(1024))
+    session_id: Mapped[str | None] = mapped_column(String(256))
     content: Mapped[str] = mapped_column(Text, nullable=False)
     resolved: Mapped[bool] = mapped_column(
         Boolean, server_default=text("false"), nullable=False
