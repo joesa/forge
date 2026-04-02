@@ -143,7 +143,7 @@ class TestPipelineState:
     """Test PipelineState TypedDict creation and field access."""
 
     def test_pipeline_state_has_all_fields(self) -> None:
-        """Verify PipelineState has ALL 13 required fields.
+        """Verify PipelineState has ALL required fields.
 
         Missing fields will cause KeyError in later sessions.
         """
@@ -152,6 +152,9 @@ class TestPipelineState:
             "idea_spec", "csuite_outputs", "comprehensive_plan",
             "spec_outputs", "build_manifest", "generated_files",
             "gate_results", "errors", "sandbox_id",
+            # Reliability layers (added in Session 1.7)
+            "env_contract", "resolved_dependencies",
+            "injected_schemas", "coherence_report",
         }
         actual_fields = set(PipelineState.__annotations__.keys())
         assert required_fields == actual_fields, (

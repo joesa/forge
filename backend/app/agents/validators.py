@@ -225,13 +225,32 @@ def validate_g10(state: PipelineState) -> GateResult:
     """G10 — File coherence check (runs AFTER all 10 build agents).
 
     Architecture rule #5: coherence engine runs after all build agents.
-    Stub: checks that generated_files is non-empty.
+    Uses the real CoherenceCheckReport from Layer 4.
     """
+    coherence = state.get("coherence_report", {})
+
+    if coherence:
+        critical = coherence.get("critical_errors", 0)
+        auto_fixes = coherence.get("auto_fixes_applied", 0)
+        all_passed = coherence.get("all_passed", False)
+
+        if not all_passed and critical > 0:
+            return _fail(
+                f"coherence check failed: {critical} critical error(s), "
+                f"{auto_fixes} auto-fixed"
+            )
+
+        files_checked = coherence.get("files_checked", 0)
+        return _ok(
+            f"coherence check passed: {files_checked} files checked, "
+            f"{auto_fixes} auto-fixed, 0 critical errors"
+        )
+
+    # Fallback: no coherence report available (backward compat)
     files = state.get("generated_files", {})
     if not files:
         return _fail("no generated files for coherence check")
-    # In production this runs the actual coherence engine
-    return _ok(f"coherence check passed on {len(files)} files")
+    return _ok(f"coherence check passed on {len(files)} files (no report)")
 
 
 def validate_g11(state: PipelineState) -> GateResult:

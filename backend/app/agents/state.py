@@ -70,5 +70,11 @@ class PipelineState(TypedDict, total=False):
     # ── Error tracking ───────────────────────────────────────────────
     errors: list[str]
 
+    # ── Reliability layers ───────────────────────────────────────────
+    env_contract: dict[str, object]           # Layer 1: env contract
+    resolved_dependencies: dict[str, object]  # Layer 1: resolved deps
+    injected_schemas: dict[str, str]          # Layer 2: schema strings
+    coherence_report: dict[str, object]       # Layer 4: coherence result
+
     # ── Sandbox ──────────────────────────────────────────────────────
     sandbox_id: str | None

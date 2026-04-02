@@ -48,6 +48,17 @@ from app.agents.validators import (
     validate_g12,
 )
 from app.core.redis import publish_event
+from app.reliability.layer1_pregeneration import (
+    generate_env_contract,
+    resolve_dependencies,
+)
+from app.reliability.layer2_schema_driven import (
+    generate_openapi_spec,
+    generate_pydantic_schemas,
+    generate_typescript_types,
+    generate_zod_schemas,
+)
+from app.reliability.layer4_coherence import run_coherence_check
 
 logger = structlog.get_logger(__name__)
 
@@ -74,7 +85,7 @@ async def _publish_stage_event(
 # ── Stage 1: Input Layer ─────────────────────────────────────────────
 
 async def input_layer(state: PipelineState) -> dict[str, Any]:
-    """Validate idea spec and inject Layer 2 schema."""
+    """Validate idea spec, run Layer 1 contracts, inject Layer 2 schema."""
     pipeline_id = state.get("pipeline_id", "")
     await _publish_stage_event(pipeline_id, 1, "running", "validating idea spec")
 
@@ -99,13 +110,41 @@ async def input_layer(state: PipelineState) -> dict[str, Any]:
     idea_spec["_schema_version"] = "2.0"
     idea_spec["_injected_at"] = time.time()
 
-    await _publish_stage_event(pipeline_id, 1, "completed", "idea spec validated")
+    # ── Layer 1: Pre-generation contracts ─────────────────────────
+    # Resolve dependencies from tech stack
+    framework = str(idea_spec.get("framework", "react_vite"))
+    tech_stack = [framework]
+    features = idea_spec.get("features", [])
+    if isinstance(features, list):
+        tech_stack.extend(str(f) for f in features if isinstance(f, str))
+
+    resolved_deps = resolve_dependencies(tech_stack)
+
+    # Generate env contract
+    integrations: list[str] = []
+    for feat in (features if isinstance(features, list) else []):
+        feat_lower = str(feat).lower()
+        for integration in ("stripe", "supabase", "firebase", "openai", "sendgrid", "auth0", "redis"):
+            if integration in feat_lower:
+                integrations.append(integration)
+    env_contract = generate_env_contract(tech_stack, integrations)
+
+    logger.info(
+        "input_layer.layer1_complete",
+        packages_resolved=len(resolved_deps.packages),
+        conflicts_resolved=resolved_deps.conflicts_resolved,
+        env_required=len(env_contract.required),
+    )
+
+    await _publish_stage_event(pipeline_id, 1, "completed", "idea spec validated + Layer 1 contracts")
 
     return {
         "current_stage": 1,
         "idea_spec": idea_spec,
         "gate_results": gate_results,
         "errors": errors,
+        "resolved_dependencies": resolved_deps.model_dump(),
+        "env_contract": env_contract.model_dump(),
     }
 
 
@@ -273,7 +312,7 @@ async def _run_spec_agent(
 
 
 async def spec_layer(state: PipelineState) -> dict[str, Any]:
-    """Run 5 spec agents in parallel."""
+    """Run 5 spec agents in parallel, then generate Layer 2 schemas."""
     pipeline_id = state.get("pipeline_id", "")
     await _publish_stage_event(pipeline_id, 4, "running", "5 parallel spec agents")
 
@@ -301,13 +340,48 @@ async def spec_layer(state: PipelineState) -> dict[str, Any]:
             "errors": errors,
         }
 
-    await _publish_stage_event(pipeline_id, 4, "completed", "all 5 specs done")
+    # ── Layer 2: Generate schemas from spec outputs ──────────────
+    injected_schemas: dict[str, str] = dict(state.get("injected_schemas", {}))
+
+    # OpenAPI spec from api_spec
+    openapi_spec = generate_openapi_spec(spec_outputs)
+    injected_schemas["openapi_spec"] = openapi_spec
+
+    # Zod schemas from PRD (comprehensive plan contains entity data)
+    zod_schemas = generate_zod_schemas(plan)
+    injected_schemas["zod_schemas"] = zod_schemas
+
+    # Pydantic schemas from PRD
+    pydantic_schemas = generate_pydantic_schemas(plan)
+    injected_schemas["pydantic_schemas"] = pydantic_schemas
+
+    # DB types from db_spec SQL output — generated here so they're
+    # available BEFORE PageAgent and ComponentAgent in Stage 6
+    db_spec = spec_outputs.get("db_spec", {})
+    db_sql = db_spec.get("sql", db_spec.get("schema", ""))
+    if isinstance(db_sql, str) and ("CREATE TABLE" in db_sql or "CREATE TYPE" in db_sql):
+        db_types = generate_typescript_types(db_sql)
+        injected_schemas["db_types"] = db_types
+        logger.info(
+            "spec_layer.db_types_generated",
+            length=len(db_types),
+        )
+
+    logger.info(
+        "spec_layer.layer2_schemas_generated",
+        openapi_length=len(openapi_spec),
+        zod_length=len(zod_schemas),
+        pydantic_length=len(pydantic_schemas),
+    )
+
+    await _publish_stage_event(pipeline_id, 4, "completed", "all 5 specs done + Layer 2 schemas")
 
     return {
         "current_stage": 4,
         "spec_outputs": spec_outputs,
         "gate_results": gate_results,
         "errors": errors,
+        "injected_schemas": injected_schemas,
     }
 
 
@@ -390,7 +464,11 @@ async def _run_build_agent(
 
 
 async def build(state: PipelineState) -> dict[str, Any]:
-    """Run 10 build agents sequentially with G7 per agent."""
+    """Run 10 build agents sequentially with G7 per agent.
+
+    Architecture rule #5: coherence engine runs AFTER all 10 build agents.
+    Architecture rule #6: schema injection happens BEFORE each relevant agent.
+    """
     pipeline_id = state.get("pipeline_id", "")
     await _publish_stage_event(pipeline_id, 6, "running", "10 sequential build agents")
 
@@ -399,6 +477,22 @@ async def build(state: PipelineState) -> dict[str, Any]:
     gate_results = dict(state.get("gate_results", {}))
     errors = list(state.get("errors", []))
     generated_files: dict[str, str] = dict(state.get("generated_files", {}))
+    injected_schemas: dict[str, str] = dict(state.get("injected_schemas", {}))
+
+    # Agents that receive specific schema injections (rule #6)
+    # db_types injected into page/component so frontend types match DB schema
+    _SCHEMA_INJECTION_MAP: dict[str, list[str]] = {
+        "component": ["zod_schemas", "pydantic_schemas", "db_types"],
+        "page": ["zod_schemas", "db_types"],
+        "api": ["openapi_spec", "pydantic_schemas"],
+        "state": ["zod_schemas"],
+        "prd": [],
+        "design_system": [],
+        "layout": [],
+        "integration": ["openapi_spec"],
+        "config": [],
+        "quality": ["openapi_spec", "zod_schemas", "db_types"],
+    }
 
     for agent_name in _BUILD_AGENTS:
         await _publish_stage_event(
@@ -406,10 +500,22 @@ async def build(state: PipelineState) -> dict[str, Any]:
         )
 
         # Architecture rule #6: schema injection before each agent
-        # (stub — in production this injects relevant schemas)
+        agent_schemas = _SCHEMA_INJECTION_MAP.get(agent_name, [])
+        for schema_key in agent_schemas:
+            if schema_key in injected_schemas:
+                logger.info(
+                    "build.schema_injected",
+                    agent=agent_name,
+                    schema=schema_key,
+                    length=len(injected_schemas[schema_key]),
+                )
 
         _name, files = await _run_build_agent(agent_name, manifest, plan)
         generated_files.update(files)
+
+        # DB types are now generated in spec_layer() (Stage 4), not here.
+        # This ensures they're available BEFORE PageAgent (position 5)
+        # rather than after api agent (position 6).
 
         # G7 — per-agent validation
         check_state: PipelineState = {
@@ -429,9 +535,10 @@ async def build(state: PipelineState) -> dict[str, Any]:
                 "generated_files": generated_files,
                 "gate_results": gate_results,
                 "errors": errors,
+                "injected_schemas": injected_schemas,
             }
 
-    # Architecture rule #5: coherence engine runs AFTER all 10 build agents
+    # Build stage complete — G8/G9 pre-checks before review_agent
     final_state: PipelineState = {
         "generated_files": generated_files,
         "errors": errors,
@@ -447,21 +554,83 @@ async def build(state: PipelineState) -> dict[str, Any]:
     g9 = validate_g9(final_state)
     gate_results["G9"] = g9
 
-    # G10 — file coherence (post all agents)
-    g10 = validate_g10(final_state)
+    await _publish_stage_event(pipeline_id, 6, "completed", "all 10 agents done")
+
+    return {
+        "current_stage": 6,
+        "generated_files": generated_files,
+        "gate_results": gate_results,
+        "errors": errors,
+        "injected_schemas": injected_schemas,
+    }
+
+
+# ── Review Agent ─────────────────────────────────────────────────────
+
+async def review_agent(state: PipelineState) -> dict[str, Any]:
+    """Review agent — runs AFTER all 10 build agents complete.
+
+    Architecture rule #5: File coherence engine runs ONLY here,
+    never from individual build agents.
+
+    Responsibilities:
+      - Run Layer 4 coherence check (import/export, seam, barrel)
+      - Apply G10 (coherence), G11 (manifest match), G12 (final)
+    """
+    pipeline_id = state.get("pipeline_id", "")
+    await _publish_stage_event(
+        pipeline_id, 6, "running", "review agent — coherence check"
+    )
+
+    gate_results = dict(state.get("gate_results", {}))
+    errors = list(state.get("errors", []))
+    generated_files: dict[str, str] = dict(state.get("generated_files", {}))
+    manifest = state.get("build_manifest", {})
+
+    # ── Architecture rule #5: coherence engine AFTER all 10 agents ──
+    build_id = state.get("pipeline_id", "unknown")
+    coherence_report = await run_coherence_check(
+        str(build_id), generated_files
+    )
+    coherence_dict = coherence_report.model_dump()
+
+    logger.info(
+        "review_agent.coherence_check_complete",
+        critical_errors=coherence_report.critical_errors,
+        auto_fixes=coherence_report.auto_fixes_applied,
+        all_passed=coherence_report.all_passed,
+    )
+
+    review_state: PipelineState = {
+        "generated_files": generated_files,
+        "errors": errors,
+        "gate_results": gate_results,
+        "build_manifest": manifest,
+        "coherence_report": coherence_dict,
+    }
+
+    # G10 — file coherence (uses real coherence report)
+    g10 = validate_g10(review_state)
     gate_results["G10"] = g10
 
+    if not g10["passed"]:
+        errors.append(f"G10 coherence failed: {g10['reason']}")
+        await _publish_stage_event(
+            pipeline_id, 6, "failed",
+            f"coherence check failed: {coherence_report.critical_errors} critical errors",
+        )
+
     # G11 — manifest ↔ generated files match
-    g11 = validate_g11(final_state)
+    g11 = validate_g11(review_state)
     gate_results["G11"] = g11
 
     # G12 — final pipeline validation
-    final_state["gate_results"] = gate_results
-    g12 = validate_g12(final_state)
+    review_state["gate_results"] = gate_results
+    g12 = validate_g12(review_state)
     gate_results["G12"] = g12
 
     if g12["passed"]:
-        await _publish_stage_event(pipeline_id, 6, "completed", "build complete")
+        await _publish_stage_event(pipeline_id, 6, "completed", "review passed")
     else:
         errors.append(f"G12 failed: {g12['reason']}")
         await _publish_stage_event(pipeline_id, 6, "failed", g12["reason"])
@@ -471,6 +640,7 @@ async def build(state: PipelineState) -> dict[str, Any]:
         "generated_files": generated_files,
         "gate_results": gate_results,
         "errors": errors,
+        "coherence_report": coherence_dict,
     }
 
 
@@ -534,6 +704,17 @@ def _after_bootstrap(state: PipelineState) -> str:
 
 
 def _after_build(state: PipelineState) -> str:
+    """Route after build: if G8/G9 failed → error, else → review_agent."""
+    gate_results = state.get("gate_results", {})
+    g8 = gate_results.get("G8", {})
+    g9 = gate_results.get("G9", {})
+    if not g8.get("passed", True) or not g9.get("passed", True):
+        return "error_handler"
+    return "review_agent"
+
+
+def _after_review(state: PipelineState) -> str:
+    """Route after review_agent: if G12 failed → error, else → END."""
     gate_results = state.get("gate_results", {})
     g12 = gate_results.get("G12", {})
     if not g12.get("passed", False):
@@ -544,7 +725,15 @@ def _after_build(state: PipelineState) -> str:
 # ── Graph assembly ───────────────────────────────────────────────────
 
 def build_pipeline_graph() -> StateGraph:
-    """Construct and return the (uncompiled) 6-stage pipeline graph."""
+    """Construct and return the (uncompiled) 6-stage pipeline graph.
+
+    Architecture:
+      input_layer → csuite_analysis → synthesis → spec_layer
+      → bootstrap → build → review_agent → END
+
+    review_agent is a separate node (not part of build) to enforce
+    rule #5: coherence engine ONLY runs after all 10 build agents.
+    """
     graph = StateGraph(PipelineState)
 
     # Add nodes
@@ -554,6 +743,7 @@ def build_pipeline_graph() -> StateGraph:
     graph.add_node("spec_layer", spec_layer)
     graph.add_node("bootstrap", bootstrap)
     graph.add_node("build", build)
+    graph.add_node("review_agent", review_agent)
     graph.add_node("error_handler", error_handler)
 
     # Entry point
@@ -566,6 +756,7 @@ def build_pipeline_graph() -> StateGraph:
     graph.add_conditional_edges("spec_layer", _after_spec)
     graph.add_conditional_edges("bootstrap", _after_bootstrap)
     graph.add_conditional_edges("build", _after_build)
+    graph.add_conditional_edges("review_agent", _after_review)
 
     # error_handler → END
     graph.add_edge("error_handler", END)
