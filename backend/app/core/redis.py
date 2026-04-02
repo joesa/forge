@@ -1,5 +1,8 @@
 """
-Upstash Redis async client utilities.
+Redis async client utilities.
+
+Local development: redis://127.0.0.1:6379 (no auth)
+Production:        Upstash Redis via REDIS_URL env var
 
 Provides cache helpers (get / set / delete) and a pub/sub publisher.
 """
@@ -23,6 +26,8 @@ async def get_redis() -> aioredis.Redis:
             settings.REDIS_URL,
             decode_responses=True,
             max_connections=20,
+            socket_connect_timeout=5,
+            socket_timeout=5,
         )
     return _pool
 

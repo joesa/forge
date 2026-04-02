@@ -85,5 +85,8 @@ class PipelineState(TypedDict, total=False):
     # ── Review result ────────────────────────────────────────────────
     review_result: dict[str, object]          # review_agent's final outcome
 
+    # ── Layer 7: Wiremock simulation ─────────────────────────────────
+    wiremock_config: dict[str, object]        # {base_url, port, services, active}
+
     # ── Sandbox ──────────────────────────────────────────────────────
     sandbox_id: str | None

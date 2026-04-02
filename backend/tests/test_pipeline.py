@@ -155,6 +155,9 @@ class TestPipelineState:
             # Reliability layers (added in Session 1.7)
             "env_contract", "resolved_dependencies",
             "injected_schemas", "coherence_report",
+            # Build pipeline (added in Sessions 1.5-1.7c)
+            "build_id", "snapshot_urls", "review_result",
+            "wiremock_config",
         }
         actual_fields = set(PipelineState.__annotations__.keys())
         assert required_fields == actual_fields, (

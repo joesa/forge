@@ -8,4 +8,5 @@ Layers implemented:
   4. File coherence engine (import/export validation, seam detection)
   5. Code contract enforcement (pattern library, API contract validator, type inference)
   6. Build intelligence (semantic cache, build memory, error boundaries, incremental builds)
+  7. External service simulation (Wiremock stubs — never hit real APIs in tests)
 """

@@ -22,6 +22,7 @@ Architecture rules enforced:
 from __future__ import annotations
 
 import asyncio
+import os
 import time
 from typing import Any
 
@@ -446,6 +447,7 @@ from app.agents.build import (
     run_hotfix_agent,
     run_review_agent,
 )
+from app.reliability.layer7_simulation import WiremockManager
 
 # Schema injection map: which Layer 2 schemas each agent receives
 _SCHEMA_INJECTION_MAP: dict[str, list[str]] = {
@@ -461,6 +463,48 @@ _SCHEMA_INJECTION_MAP: dict[str, list[str]] = {
 }
 
 
+# Known external integrations detected from spec/feature keywords
+_INTEGRATION_KEYWORDS: dict[str, str] = {
+    "stripe": "stripe",
+    "payment": "stripe",
+    "supabase": "supabase",
+    "resend": "resend",
+    "email": "resend",
+    "openai": "openai",
+    "gpt": "openai",
+    "chatgpt": "openai",
+    "anthropic": "anthropic",
+    "claude": "anthropic",
+    "twilio": "twilio",
+    "sms": "twilio",
+}
+
+
+def _detect_services(state: PipelineState) -> list[str]:
+    """Detect which external services the app needs from spec_outputs + idea_spec."""
+    services: set[str] = set()
+
+    # Scan idea_spec features
+    idea_spec = state.get("idea_spec", {})
+    features = idea_spec.get("features", [])
+    if isinstance(features, list):
+        for feat in features:
+            feat_lower = str(feat).lower()
+            for keyword, svc in _INTEGRATION_KEYWORDS.items():
+                if keyword in feat_lower:
+                    services.add(svc)
+
+    # Scan spec_outputs for integration references
+    spec_outputs = state.get("spec_outputs", {})
+    for _spec_name, spec_data in (spec_outputs.items() if isinstance(spec_outputs, dict) else []):
+        spec_str = str(spec_data).lower()
+        for keyword, svc in _INTEGRATION_KEYWORDS.items():
+            if keyword in spec_str:
+                services.add(svc)
+
+    return sorted(services)
+
+
 async def build(state: PipelineState) -> dict[str, Any]:
     """Run 10 build agents sequentially with G7 per agent.
 
@@ -468,6 +512,7 @@ async def build(state: PipelineState) -> dict[str, Any]:
       #4: temperature=0, fixed seed (handled by ContextWindowManager)
       #5: coherence engine runs AFTER all 10 build agents (in review_agent)
       #6: schema injection happens BEFORE each relevant agent starts
+      #7: Layer 7 — Wiremock intercepts all external API calls
 
     After each agent:
       1. Capture snapshot via SnapshotService
@@ -494,136 +539,194 @@ async def build(state: PipelineState) -> dict[str, Any]:
     cwm = ContextWindowManager(ai_router)
     snapshot_service = SnapshotService()
 
-    # ── Run agents 1-9 sequentially ──────────────────────────────
-    for idx, agent_name in enumerate(BUILD_AGENT_NAMES, start=1):
-        await _publish_stage_event(
-            pipeline_id, 6, "running", f"agent {idx}/10: {agent_name}"
-        )
+    # ── Layer 7: Wiremock simulation ─────────────────────────────
+    detected_services = _detect_services(state)
+    wiremock: WiremockManager | None = None
+    wiremock_config: dict[str, object] = {"active": False, "services": []}
 
-        # Architecture rule #6: schema injection before each agent
-        agent_schemas = _SCHEMA_INJECTION_MAP.get(agent_name, [])
-        for schema_key in agent_schemas:
-            if schema_key in injected_schemas:
-                logger.info(
-                    "build.schema_injected",
+    if detected_services:
+        try:
+            wiremock = WiremockManager(mode="inprocess")
+            await wiremock.start()
+            stubs_registered = await wiremock.configure_stubs(detected_services)
+            os.environ["EXTERNAL_API_BASE_URL"] = wiremock.base_url
+            wiremock_config = {
+                "active": True,
+                "base_url": wiremock.base_url,
+                "port": wiremock.port,
+                "services": detected_services,
+                "stubs_registered": stubs_registered,
+            }
+            logger.info(
+                "build.layer7_wiremock_started",
+                services=detected_services,
+                stubs=stubs_registered,
+                base_url=wiremock.base_url,
+            )
+        except Exception as exc:
+            logger.error("build.layer7_wiremock_failed", error=str(exc))
+            errors.append(f"Layer 7 Wiremock start failed: {str(exc)[:200]}")
+
+    # ── Run agents 1-9 sequentially ──────────────────────────────
+    # Wrapped in try/finally to GUARANTEE Wiremock cleanup even if
+    # the pipeline crashes mid-agent or takes an early return on
+    # G7 failure. Without this, in-process server threads leak.
+    try:
+        for idx, agent_name in enumerate(BUILD_AGENT_NAMES, start=1):
+            await _publish_stage_event(
+                pipeline_id, 6, "running", f"agent {idx}/10: {agent_name}"
+            )
+
+            # Architecture rule #6: schema injection before each agent
+            agent_schemas = _SCHEMA_INJECTION_MAP.get(agent_name, [])
+            for schema_key in agent_schemas:
+                if schema_key in injected_schemas:
+                    logger.info(
+                        "build.schema_injected",
+                        agent=agent_name,
+                        schema=schema_key,
+                        length=len(injected_schemas[schema_key]),
+                    )
+
+            # Run the agent
+            try:
+                run_fn = BUILD_AGENT_MAP[agent_name]
+                # Pass current generated_files in state so test_agent can see them
+                agent_state: PipelineState = {
+                    **state,
+                    "generated_files": generated_files,
+                    "injected_schemas": injected_schemas,
+                }
+                agent_files: dict[str, str] = await run_fn(
+                    agent_state, ai_router, cwm
+                )
+                generated_files.update(agent_files)
+            except Exception as exc:
+                logger.error(
+                    "build.agent_error",
                     agent=agent_name,
-                    schema=schema_key,
-                    length=len(injected_schemas[schema_key]),
+                    error=str(exc),
+                )
+                errors.append(f"Agent {agent_name} crashed: {str(exc)[:200]}")
+
+            # Capture snapshot after each agent
+            snapshot_url = await snapshot_service.capture_snapshot(
+                build_id=str(build_id),
+                project_id=str(project_id),
+                agent_name=agent_name,
+                snapshot_index=idx,
+                generated_files=generated_files,
+                gate_results=gate_results,
+            )
+            if snapshot_url:
+                snapshot_urls.append(snapshot_url)
+
+            # G7 — per-agent validation
+            check_state: PipelineState = {
+                "generated_files": generated_files,
+                "errors": errors,
+            }
+            g7 = validate_g7(check_state, agent_name=agent_name)
+            gate_results[f"G7_{agent_name}"] = g7
+
+            if not g7["passed"]:
+                # Hotfix attempt (Layer 9)
+                logger.warning(
+                    "build.g7_failed_attempting_hotfix",
+                    agent=agent_name,
+                    reason=g7["reason"],
+                )
+                await _publish_stage_event(
+                    pipeline_id, 6, "running",
+                    f"G7 failed for {agent_name} — attempting hotfix",
                 )
 
-        # Run the agent
-        try:
-            run_fn = BUILD_AGENT_MAP[agent_name]
-            # Pass current generated_files in state so test_agent can see them
-            agent_state: PipelineState = {
-                **state,
-                "generated_files": generated_files,
-                "injected_schemas": injected_schemas,
-            }
-            agent_files: dict[str, str] = await run_fn(
-                agent_state, ai_router, cwm
-            )
-            generated_files.update(agent_files)
-        except Exception as exc:
-            logger.error(
-                "build.agent_error",
-                agent=agent_name,
-                error=str(exc),
-            )
-            errors.append(f"Agent {agent_name} crashed: {str(exc)[:200]}")
+                hotfix_state: PipelineState = {
+                    **state,
+                    "generated_files": generated_files,
+                }
+                hotfix_result = await run_hotfix_agent(
+                    state=hotfix_state,
+                    ai_router=ai_router,
+                    context_window_manager=cwm,
+                    failed_agent=agent_name,
+                    error_details=g7["reason"],
+                    generated_files=generated_files,
+                )
 
-        # Capture snapshot after each agent
-        snapshot_url = await snapshot_service.capture_snapshot(
-            build_id=str(build_id),
-            project_id=str(project_id),
-            agent_name=agent_name,
-            snapshot_index=idx,
-            generated_files=generated_files,
-            gate_results=gate_results,
-        )
-        if snapshot_url:
-            snapshot_urls.append(snapshot_url)
+                if hotfix_result.success:
+                    # Re-validate after hotfix
+                    g7_retry = validate_g7(check_state, agent_name=agent_name)
+                    gate_results[f"G7_{agent_name}"] = g7_retry
+                    if g7_retry["passed"]:
+                        logger.info("build.hotfix_succeeded", agent=agent_name)
+                        continue
 
-        # G7 — per-agent validation
-        check_state: PipelineState = {
+                # Hotfix failed or didn't resolve — pipeline fails
+                errors.append(f"G7 failed for {agent_name}: {g7['reason']}")
+                await _publish_stage_event(
+                    pipeline_id, 6, "failed",
+                    f"agent {agent_name} failed G7 (hotfix unsuccessful)",
+                )
+                return {
+                    "current_stage": 6,
+                    "generated_files": generated_files,
+                    "gate_results": gate_results,
+                    "errors": errors,
+                    "injected_schemas": injected_schemas,
+                    "snapshot_urls": snapshot_urls,
+                    "wiremock_config": wiremock_config,
+                }
+
+        # ── G8/G9 pre-checks before review_agent ─────────────────────
+        final_state: PipelineState = {
             "generated_files": generated_files,
             "errors": errors,
+            "gate_results": gate_results,
+            "build_manifest": manifest,
         }
-        g7 = validate_g7(check_state, agent_name=agent_name)
-        gate_results[f"G7_{agent_name}"] = g7
 
-        if not g7["passed"]:
-            # Hotfix attempt (Layer 9)
-            logger.warning(
-                "build.g7_failed_attempting_hotfix",
-                agent=agent_name,
-                reason=g7["reason"],
-            )
-            await _publish_stage_event(
-                pipeline_id, 6, "running",
-                f"G7 failed for {agent_name} — attempting hotfix",
-            )
+        g8 = validate_g8(final_state)
+        gate_results["G8"] = g8
+        g9 = validate_g9(final_state)
+        gate_results["G9"] = g9
 
-            hotfix_state: PipelineState = {
-                **state,
-                "generated_files": generated_files,
-            }
-            hotfix_result = await run_hotfix_agent(
-                state=hotfix_state,
-                ai_router=ai_router,
-                context_window_manager=cwm,
-                failed_agent=agent_name,
-                error_details=g7["reason"],
-                generated_files=generated_files,
-            )
+        await _publish_stage_event(pipeline_id, 6, "completed", "all 10 agents done")
 
-            if hotfix_result.success:
-                # Re-validate after hotfix
-                g7_retry = validate_g7(check_state, agent_name=agent_name)
-                gate_results[f"G7_{agent_name}"] = g7_retry
-                if g7_retry["passed"]:
-                    logger.info("build.hotfix_succeeded", agent=agent_name)
-                    continue
-
-            # Hotfix failed or didn't resolve — pipeline fails
-            errors.append(f"G7 failed for {agent_name}: {g7['reason']}")
-            await _publish_stage_event(
-                pipeline_id, 6, "failed",
-                f"agent {agent_name} failed G7 (hotfix unsuccessful)",
-            )
-            return {
-                "current_stage": 6,
-                "generated_files": generated_files,
-                "gate_results": gate_results,
-                "errors": errors,
-                "injected_schemas": injected_schemas,
-                "snapshot_urls": snapshot_urls,
-            }
-
-    # ── G8/G9 pre-checks before review_agent ─────────────────────
-    final_state: PipelineState = {
-        "generated_files": generated_files,
-        "errors": errors,
-        "gate_results": gate_results,
-        "build_manifest": manifest,
-    }
-
-    g8 = validate_g8(final_state)
-    gate_results["G8"] = g8
-    g9 = validate_g9(final_state)
-    gate_results["G9"] = g9
-
-    await _publish_stage_event(pipeline_id, 6, "completed", "all 10 agents done")
-
-    return {
-        "current_stage": 6,
-        "generated_files": generated_files,
-        "gate_results": gate_results,
-        "errors": errors,
-        "injected_schemas": injected_schemas,
-        "snapshot_urls": snapshot_urls,
-        "build_id": build_id,
-    }
+        return {
+            "current_stage": 6,
+            "generated_files": generated_files,
+            "gate_results": gate_results,
+            "errors": errors,
+            "injected_schemas": injected_schemas,
+            "snapshot_urls": snapshot_urls,
+            "build_id": build_id,
+            "wiremock_config": wiremock_config,
+        }
+    finally:
+        # GUARANTEED cleanup: verify + stop Wiremock and remove env var
+        # even on crash, early return, or unexpected exception.
+        if wiremock is not None and wiremock.is_running:
+            try:
+                # Verify all calls matched stubs before shutdown
+                verification = await wiremock.verify_all_calls()
+                if not verification.verified:
+                    unmatched_summary = ", ".join(
+                        f"{r.method} {r.url}"
+                        for r in verification.unmatched_requests[:5]
+                    )
+                    logger.warning(
+                        "build.layer7_unmatched_requests",
+                        unmatched=len(verification.unmatched_requests),
+                        summary=unmatched_summary,
+                    )
+                await wiremock.stop()
+                logger.info("build.layer7_wiremock_stopped_finally")
+            except Exception as exc:
+                logger.error(
+                    "build.layer7_wiremock_stop_error", error=str(exc)
+                )
+        os.environ.pop("EXTERNAL_API_BASE_URL", None)
 
 
 # ── Review Agent ─────────────────────────────────────────────────────
@@ -641,6 +744,8 @@ async def review_agent_node(state: PipelineState) -> dict[str, Any]:
       - G12 visual regression (Playwright)
       - Layer 8 post-build checks (Lighthouse, axe, dead code, seeds)
       - Final snapshot capture
+
+    Layer 7: After review, verify Wiremock calls and shut down.
     """
     pipeline_id = state.get("pipeline_id", "")
     await _publish_stage_event(
@@ -668,6 +773,9 @@ async def review_agent_node(state: PipelineState) -> dict[str, Any]:
         all_passed=review_result.all_passed,
         steps=len(review_result.steps),
     )
+
+    # Layer 7 Wiremock verification and cleanup is handled by the
+    # try/finally block in build() — no action needed here.
 
     # Map review results to gate results
     review_state: PipelineState = {

@@ -60,4 +60,5 @@ Completed: Session 1.5 — LangGraph pipeline orchestration layer (6-stage graph
 Completed: Session 1.6 — C-Suite executive agents (8 agents, G3 resolver, synthesizer, G4 coherence)
 Completed: Session 1.7 — Reliability Layers 1, 2, 4 (pre-generation contracts, schema-driven generation, file coherence engine)
 Completed: Session 1.7b — Reliability Layers 3, 5, 6 (static analysis, code contracts, build intelligence)
+Completed: Session 1.7c — Reliability Layer 7 (Wiremock external service simulation, 6 service stubs)
 Next: Session 1.8 — Frontend pages & components
