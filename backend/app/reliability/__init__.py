@@ -10,4 +10,6 @@ Layers implemented:
   6. Build intelligence (semantic cache, build memory, error boundaries, incremental builds)
   7. External service simulation (Wiremock stubs — never hit real APIs in tests)
   8. Post-build verification (visual regression, SAST, perf, a11y, dead code, seeds)
+  9. Resilience and recovery (hotfix agent, rollback engine, canary deploy, migration safety)
+  10. AI agent reliability (context window manager, CSS validator, determinism enforcer, fallback cascade)
 """

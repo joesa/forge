@@ -150,21 +150,129 @@ def check_seam(file_path: str, content: str) -> SeamReport:
 
 
 def _check_jsx_completeness(content: str, issues: list[str]) -> None:
-    """Check for unmatched JSX opening tags."""
-    # Simple check: find component-style tags (capitalized, not self-closing)
-    opening_tags = re.findall(r"<([A-Z]\w+)(?:\s[^>]*)?>", content)
-    closing_tags = re.findall(r"</([A-Z]\w+)>", content)
-    self_closing = re.findall(r"<([A-Z]\w+)(?:\s[^>]*)?\s*/>", content)
+    """Check for unmatched JSX opening tags.
+
+    Strips TypeScript generics before scanning so that
+    ``React.forwardRef<HTMLButtonElement, Props>`` is not mistaken
+    for a JSX ``<HTMLButtonElement>`` tag.
+    """
+    # Known HTML element type names that appear in TS generics, not JSX
+    _TS_TYPE_NAMES: set[str] = {
+        "HTMLButtonElement", "HTMLInputElement", "HTMLSelectElement",
+        "HTMLTextAreaElement", "HTMLDivElement", "HTMLFormElement",
+        "HTMLAnchorElement", "HTMLSpanElement", "HTMLImageElement",
+        "HTMLElement", "SVGSVGElement", "SVGElement",
+        "Record", "Partial", "Required", "Readonly", "Pick", "Omit",
+        "Promise", "Array", "Map", "Set", "WeakMap", "WeakSet",
+        "ErrorBoundaryState", "ErrorBoundaryProps",
+    }
+
+    # ── Pre-process: remove lines that are pure type annotations ─
+    # Also strip TS generic patterns from remaining lines
+    cleaned_lines: list[str] = []
+    for line in content.split("\n"):
+        stripped_line = line.strip()
+        # Skip type/interface/import declarations entirely
+        if stripped_line.startswith(("interface ", "type ", "import ")):
+            continue
+        # Skip lines that are part of generic declarations
+        if "extends React.Component<" in line:
+            continue
+        # Strip common generic constructs from function signatures
+        if "forwardRef<" in line:
+            line = re.sub(r"forwardRef<[^(]+>\(", "forwardRef(", line)
+        if "createContext<" in line:
+            line = re.sub(r"createContext<[^(]+>\(", "createContext(", line)
+        if "useState<" in line:
+            line = re.sub(r"useState<[^(]+>\(", "useState(", line)
+        # Strip return type generics:  ): Promise<User> {
+        #   Also handles standalone: function foo(): Promise<X> {
+        line = re.sub(r":\s*Promise<[^>]+>", ": Promise", line)
+        line = re.sub(r":\s*Omit<[^>]+>", ": Omit", line)
+        # Strip any remaining generic pattern:  Identifier<...> following
+        # a colon (type annotation context)
+        line = re.sub(r":\s*(\w+)<[^>]+>", r": \1", line)
+        cleaned_lines.append(line)
+
+    cleaned = "\n".join(cleaned_lines)
+
+    # ── Extract JSX tags using a brace-aware scanner ─────────────
+    # The simple regex `<Tag [^>]*>` breaks when JSX attributes
+    # contain `>` inside expression blocks, e.g. `onClose={() => {}}`.
+    # This scanner properly skips over `{...}` blocks in attributes.
+    def _extract_jsx_tags(text: str) -> tuple[
+        list[str], list[str], list[str]
+    ]:
+        """Return (opening_tags, closing_tags, self_closing_tags)."""
+        opening: list[str] = []
+        closing: list[str] = []
+        self_close: list[str] = []
+
+        i = 0
+        n = len(text)
+        while i < n:
+            if text[i] == "<":
+                # Check for closing tag:  </Tag> or </Tag.Sub>
+                if i + 1 < n and text[i + 1] == "/":
+                    m = re.match(r"</([A-Z][\w.]+)>", text[i:])
+                    if m:
+                        closing.append(m.group(1))
+                        i += m.end()
+                        continue
+                # Check for opening/self-closing tag: <Tag ...> or <Tag.Sub .../>
+                m = re.match(r"<([A-Z][\w.]+)", text[i:])
+                if m:
+                    tag_name = m.group(1)
+                    j = i + m.end()
+                    # Scan forward for > or />, skipping {…} blocks
+                    brace_depth = 0
+                    found_end = False
+                    is_self_closing = False
+                    while j < n:
+                        ch = text[j]
+                        if ch == "{":
+                            brace_depth += 1
+                        elif ch == "}":
+                            brace_depth = max(0, brace_depth - 1)
+                        elif brace_depth == 0:
+                            if ch == "/" and j + 1 < n and text[j + 1] == ">":
+                                is_self_closing = True
+                                j += 2
+                                found_end = True
+                                break
+                            elif ch == ">":
+                                j += 1
+                                found_end = True
+                                break
+                        j += 1
+                    if found_end:
+                        if is_self_closing:
+                            self_close.append(tag_name)
+                        else:
+                            opening.append(tag_name)
+                    i = j
+                    continue
+            i += 1
+
+        return opening, closing, self_close
+
+    opening_tags, closing_tags, self_closing = _extract_jsx_tags(cleaned)
 
     # Remove self-closing from opening count
     open_set: dict[str, int] = {}
     for tag in opening_tags:
+        if tag in _TS_TYPE_NAMES:
+            continue
         open_set[tag] = open_set.get(tag, 0) + 1
     for tag in self_closing:
+        if tag in _TS_TYPE_NAMES:
+            continue
         open_set[tag] = open_set.get(tag, 0) - 1
 
     close_set: dict[str, int] = {}
     for tag in closing_tags:
+        if tag in _TS_TYPE_NAMES:
+            continue
         close_set[tag] = close_set.get(tag, 0) + 1
 
     for tag, count in open_set.items():
@@ -174,3 +282,4 @@ def _check_jsx_completeness(content: str, issues: list[str]) -> None:
                 f"unclosed JSX tag: <{tag}> opened {count} times "
                 f"but closed {close_count} times"
             )
+
