@@ -13,7 +13,8 @@ On each state change a Redis pub/sub event is published on channel
 ``pipeline:{pipeline_id}`` so WebSocket clients receive live updates.
 
 Architecture rules enforced:
-  #4: temperature=0, fixed seed (deterministic) — set in agent stubs
+  #4: temperature=0, fixed seed (deterministic) — set in build agents (Stage 6)
+      C-Suite agents (Stage 2) use temperature=0.7 (analytical, not code gen)
   #5: File coherence engine runs AFTER all 10 build agents
   #6: Schema injection happens BEFORE each relevant agent starts
 """
@@ -27,7 +28,11 @@ from typing import Any
 import structlog
 from langgraph.graph import END, StateGraph
 
+from app.agents.ai_router import AIRouter, create_ai_router
+from app.agents.csuite import CSUITE_AGENT_MAP, CSUITE_AGENT_NAMES
 from app.agents.state import PipelineState
+from app.agents.synthesis.g3_resolver import run_g3_resolver
+from app.agents.synthesis.synthesizer import run_synthesizer
 from app.agents.validators import (
     validate_g1,
     validate_g2,
@@ -106,45 +111,57 @@ async def input_layer(state: PipelineState) -> dict[str, Any]:
 
 # ── Stage 2: C-Suite Analysis ────────────────────────────────────────
 
-_CSUITE_AGENTS = (
-    "ceo", "cto", "cpo", "cdo", "ciso",
-    "qa_lead", "devops_lead", "ux_lead",
-)
+async def _run_single_csuite_agent(
+    agent_name: str,
+    state: PipelineState,
+    ai_router: AIRouter,
+) -> tuple[str, dict[str, Any]]:
+    """Run a single C-suite agent and return (name, output).
 
-
-async def _run_csuite_agent(agent_name: str, idea_spec: dict[str, Any]) -> tuple[str, dict[str, Any]]:
-    """Stub: run a single C-suite analyst agent.
-
-    In production this calls the LLM with temperature=0, fixed seed.
+    Wraps the call in try/except so a crash in any single agent
+    cannot kill the entire asyncio.gather batch.  On failure the
+    agent returns an empty dict — G2 will flag missing fields.
     """
-    # Simulate async work
-    await asyncio.sleep(0)
-    return agent_name, {
-        "agent": agent_name,
-        "analysis": f"{agent_name} analysis of: {idea_spec.get('title', 'untitled')}",
-        "recommendations": [f"{agent_name}_rec_1", f"{agent_name}_rec_2"],
-        "confidence": 0.92,
-    }
+    try:
+        run_fn = CSUITE_AGENT_MAP[agent_name]
+        output = await run_fn(state, ai_router)
+        return agent_name, output
+    except Exception as exc:
+        logger.error(
+            "csuite_agent.wrapper_error",
+            agent=agent_name,
+            error=str(exc),
+        )
+        return agent_name, {}
 
 
 async def csuite_analysis(state: PipelineState) -> dict[str, Any]:
-    """Run 8 C-suite analyst agents in parallel."""
+    """Run 8 C-suite analyst agents in parallel via asyncio.gather.
+
+    Then run G3 resolver to detect and auto-resolve conflicts.
+    Temperature: 0.7 (analytical, not code generation).
+    """
     pipeline_id = state.get("pipeline_id", "")
     await _publish_stage_event(pipeline_id, 2, "running", "8 parallel analysts")
 
-    idea_spec = state.get("idea_spec", {})
     gate_results = dict(state.get("gate_results", {}))
     errors = list(state.get("errors", []))
 
-    # Run all 8 in parallel
-    tasks = [_run_csuite_agent(name, idea_spec) for name in _CSUITE_AGENTS]
+    # Create AI router (stub for now — production will use real provider)
+    ai_router = create_ai_router(provider="stub")
+
+    # Run all 8 C-Suite agents in parallel
+    tasks = [
+        _run_single_csuite_agent(name, state, ai_router)
+        for name in CSUITE_AGENT_NAMES
+    ]
     results = await asyncio.gather(*tasks)
 
     csuite_outputs: dict[str, dict[str, Any]] = {}
     for agent_name, output in results:
         csuite_outputs[agent_name] = output
 
-    # G2 — all 8 outputs present
+    # G2 — validate all 8 outputs present with correct schemas
     g2 = validate_g2({"csuite_outputs": csuite_outputs})  # type: ignore[arg-type]
     gate_results["G2"] = g2
     if not g2["passed"]:
@@ -157,9 +174,16 @@ async def csuite_analysis(state: PipelineState) -> dict[str, Any]:
             "errors": errors,
         }
 
-    # G3 — auto-resolve conflicts (always passes)
-    g3 = validate_g3(state)
+    # G3 — run conflict resolver
+    g3_resolution = await run_g3_resolver(csuite_outputs)
+    g3 = validate_g3(state, g3_resolution=g3_resolution)
     gate_results["G3"] = g3
+
+    logger.info(
+        "csuite_analysis.g3_resolved",
+        conflicts_found=g3_resolution.get("conflicts_found", 0),
+        conflicts_resolved=g3_resolution.get("conflicts_resolved", 0),
+    )
 
     await _publish_stage_event(pipeline_id, 2, "completed", "all 8 analysts done")
 
@@ -174,36 +198,38 @@ async def csuite_analysis(state: PipelineState) -> dict[str, Any]:
 # ── Stage 3: Synthesis ───────────────────────────────────────────────
 
 async def synthesis(state: PipelineState) -> dict[str, Any]:
-    """Synthesizer: merge C-suite outputs into a comprehensive plan."""
+    """Synthesizer: merge C-suite outputs into a comprehensive plan.
+
+    Validates G4: coherence_score >= 0.85 across 5 dimensions.
+    If G4 fails, retries synthesizer once with adjusted prompt.
+    """
     pipeline_id = state.get("pipeline_id", "")
     await _publish_stage_event(pipeline_id, 3, "running", "synthesizing plan")
 
     gate_results = dict(state.get("gate_results", {}))
     errors = list(state.get("errors", []))
-    csuite_outputs = state.get("csuite_outputs", {})
 
-    # Stub: synthesise a comprehensive plan from C-suite outputs
-    comprehensive_plan: dict[str, Any] = {
-        "title": state.get("idea_spec", {}).get("title", ""),
-        "architecture": "modern full-stack",
-        "tech_stack": {
-            "frontend": "React + Vite + TypeScript",
-            "backend": "FastAPI + PostgreSQL",
-            "deployment": "Northflank + Cloudflare",
-        },
-        "agents_consulted": list(csuite_outputs.keys()),
-        "coherence_score": 0.93,  # Stub: above G4 threshold
-        "sections": [
-            "requirements",
-            "architecture",
-            "data_model",
-            "api_design",
-            "ui_design",
-        ],
-    }
+    ai_router = create_ai_router(provider="stub")
+
+    # First attempt
+    comprehensive_plan = await run_synthesizer(state, ai_router)
 
     # G4 — coherence_score >= 0.85
     g4 = validate_g4({"comprehensive_plan": comprehensive_plan})  # type: ignore[arg-type]
+
+    if not g4["passed"]:
+        # Retry once with adjusted guidance
+        logger.warning(
+            "synthesis.g4_retry",
+            first_score=comprehensive_plan.get("coherence_score", 0),
+            reason=g4["reason"],
+        )
+        await _publish_stage_event(
+            pipeline_id, 3, "running", "G4 retry — adjusting synthesis"
+        )
+        comprehensive_plan = await run_synthesizer(state, ai_router)
+        g4 = validate_g4({"comprehensive_plan": comprehensive_plan})  # type: ignore[arg-type]
+
     gate_results["G4"] = g4
 
     if not g4["passed"]:
@@ -356,7 +382,7 @@ async def _run_build_agent(
     file_path = f"src/{agent_name}/index.tsx"
     file_content = (
         f"// Generated by {agent_name} agent\n"
-        f"// Plan: {plan.get('title', 'untitled')}\n"
+        f"// Plan: {plan.get('title', plan.get('executive_summary', 'untitled')[:40])}\n"
         f"export default function {agent_name.title().replace('_', '')}() "
         "{ return null; }\n"
     )

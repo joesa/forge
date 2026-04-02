@@ -96,8 +96,8 @@ def full_pipeline_state(
         "csuite_outputs": {
             name: {"analysis": f"{name} output"}
             for name in (
-                "ceo", "cto", "cpo", "cdo", "ciso",
-                "qa_lead", "devops_lead", "ux_lead",
+                "ceo", "cto", "cdo", "cmo", "cpo",
+                "cso", "cco", "cfo",
             )
         },
         "comprehensive_plan": {
@@ -234,12 +234,18 @@ class TestG2:
     """G2 — All 8 C-suite outputs present."""
 
     def test_passes_with_all_agents(self) -> None:
+        from app.agents.csuite.ceo_agent import _default_output as ceo_d
+        from app.agents.csuite.cto_agent import _default_output as cto_d
+        from app.agents.csuite.cdo_agent import _default_output as cdo_d
+        from app.agents.csuite.cmo_agent import _default_output as cmo_d
+        from app.agents.csuite.cpo_agent import _default_output as cpo_d
+        from app.agents.csuite.cso_agent import _default_output as cso_d
+        from app.agents.csuite.cco_agent import _default_output as cco_d
+        from app.agents.csuite.cfo_agent import _default_output as cfo_d
         outputs = {
-            name: {"analysis": "done"}
-            for name in (
-                "ceo", "cto", "cpo", "cdo", "ciso",
-                "qa_lead", "devops_lead", "ux_lead",
-            )
+            "ceo": ceo_d(), "cto": cto_d(), "cdo": cdo_d(),
+            "cmo": cmo_d(), "cpo": cpo_d(), "cso": cso_d(),
+            "cco": cco_d(), "cfo": cfo_d(),
         }
         result = validate_g2({"csuite_outputs": outputs})  # type: ignore[arg-type]
         assert result["passed"] is True

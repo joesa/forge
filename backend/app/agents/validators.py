@@ -10,13 +10,14 @@ Architecture rule #5: File coherence engine (G10) runs AFTER all
 
 from __future__ import annotations
 
+from typing import Any
+
 from app.agents.state import GateResult, PipelineState
 
 # ── Helpers ──────────────────────────────────────────────────────────
 
 _CSUITE_AGENTS = (
-    "ceo", "cto", "cpo", "cdo", "ciso",
-    "qa_lead", "devops_lead", "ux_lead",
+    "ceo", "cto", "cdo", "cmo", "cpo", "cso", "cco", "cfo",
 )
 
 _SPEC_AGENTS = (
@@ -27,6 +28,18 @@ _BUILD_AGENTS = (
     "prd", "design_system", "layout", "component", "page",
     "api", "state", "integration", "config", "quality",
 )
+
+# Required fields per agent for G2 schema validation
+_CSUITE_REQUIRED_FIELDS: dict[str, list[str]] = {
+    "ceo": ["market_opportunity", "business_model", "revenue_strategy"],
+    "cto": ["tech_stack_recommendation", "api_design_principles"],
+    "cdo": ["ux_principles", "design_system_recommendation"],
+    "cmo": ["gtm_strategy", "target_customer_profile"],
+    "cpo": ["feature_prioritization", "mvp_scope", "user_stories"],
+    "cso": ["auth_architecture", "encryption_requirements"],
+    "cco": ["privacy_policy_requirements", "terms_of_service_requirements"],
+    "cfo": ["pricing_strategy", "unit_economics"],
+}
 
 
 def _ok(reason: str = "passed") -> GateResult:
@@ -54,23 +67,70 @@ def validate_g1(state: PipelineState) -> GateResult:
 # ── Stage 2 gates ────────────────────────────────────────────────────
 
 def validate_g2(state: PipelineState) -> GateResult:
-    """G2 — All 8 C-suite agent outputs must be present."""
+    """G2 — All 8 C-suite agent outputs must be present with valid schemas."""
     outputs = state.get("csuite_outputs", {})
     missing = [a for a in _CSUITE_AGENTS if a not in outputs]
     if missing:
         return _fail(f"missing csuite outputs: {', '.join(missing)}")
-    return _ok("all 8 csuite outputs present")
+
+    # Validate that each output has required fields
+    for agent_name in _CSUITE_AGENTS:
+        agent_output = outputs.get(agent_name, {})
+        required = _CSUITE_REQUIRED_FIELDS.get(agent_name, [])
+        missing_fields = [f for f in required if f not in agent_output]
+        if missing_fields:
+            return _fail(
+                f"{agent_name} missing required fields: "
+                f"{', '.join(missing_fields)}"
+            )
+
+    return _ok("all 8 csuite outputs present with valid schemas")
 
 
-def validate_g3(state: PipelineState) -> GateResult:
-    """G3 — Auto-resolve conflicts (always passes per spec)."""
-    return _ok("conflicts auto-resolved")
+def validate_g3(
+    state: PipelineState,
+    g3_resolution: dict[str, Any] | None = None,
+) -> GateResult:
+    """G3 — Conflict resolution gate.
+
+    When g3_resolution is provided, validates that all detected conflicts
+    were resolved. Otherwise auto-passes for backward compatibility.
+    """
+    if g3_resolution is None:
+        return _ok("conflicts auto-resolved (no resolution data)")
+
+    found = g3_resolution.get("conflicts_found", 0)
+    resolved = g3_resolution.get("conflicts_resolved", 0)
+
+    if found > resolved:
+        return _fail(
+            f"{found - resolved} of {found} conflicts remain unresolved"
+        )
+
+    return _ok(
+        f"{resolved} conflict(s) detected and auto-resolved"
+        if found > 0
+        else "no conflicts detected"
+    )
 
 
 # ── Stage 3 gates ────────────────────────────────────────────────────
 
+_COHERENCE_DIMENSIONS = (
+    "market_tech_alignment",
+    "design_product_alignment",
+    "finance_scope_alignment",
+    "compliance_tech_alignment",
+    "gtm_product_alignment",
+)
+
+
 def validate_g4(state: PipelineState) -> GateResult:
-    """G4 — Comprehensive plan must have coherence_score >= 0.85."""
+    """G4 — Comprehensive plan must have coherence_score >= 0.85.
+
+    Also validates that all 5 coherence dimensions are present when
+    coherence_dimensions is provided.
+    """
     plan = state.get("comprehensive_plan", {})
     if not plan:
         return _fail("comprehensive_plan is missing")
@@ -79,6 +139,26 @@ def validate_g4(state: PipelineState) -> GateResult:
         return _fail(f"coherence_score is not numeric: {score}")
     if score < 0.85:
         return _fail(f"coherence_score {score:.2f} < 0.85 threshold")
+
+    # Validate coherence dimensions if present
+    dimensions = plan.get("coherence_dimensions", {})
+    if dimensions:
+        missing_dims = [d for d in _COHERENCE_DIMENSIONS if d not in dimensions]
+        if missing_dims:
+            return _fail(
+                f"missing coherence dimensions: {', '.join(missing_dims)}"
+            )
+        # Check each dimension is >= 0.7 (individual minimum)
+        low_dims = [
+            f"{d}={dimensions[d]:.2f}"
+            for d in _COHERENCE_DIMENSIONS
+            if isinstance(dimensions.get(d), (int, float)) and dimensions[d] < 0.7
+        ]
+        if low_dims:
+            return _fail(
+                f"low coherence dimensions: {', '.join(low_dims)}"
+            )
+
     return _ok(f"coherence_score {score:.2f} meets threshold")
 
 
