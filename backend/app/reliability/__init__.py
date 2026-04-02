@@ -9,4 +9,5 @@ Layers implemented:
   5. Code contract enforcement (pattern library, API contract validator, type inference)
   6. Build intelligence (semantic cache, build memory, error boundaries, incremental builds)
   7. External service simulation (Wiremock stubs — never hit real APIs in tests)
+  8. Post-build verification (visual regression, SAST, perf, a11y, dead code, seeds)
 """

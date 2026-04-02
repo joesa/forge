@@ -61,4 +61,5 @@ Completed: Session 1.6 — C-Suite executive agents (8 agents, G3 resolver, synt
 Completed: Session 1.7 — Reliability Layers 1, 2, 4 (pre-generation contracts, schema-driven generation, file coherence engine)
 Completed: Session 1.7b — Reliability Layers 3, 5, 6 (static analysis, code contracts, build intelligence)
 Completed: Session 1.7c — Reliability Layer 7 (Wiremock external service simulation, 6 service stubs)
+Completed: Session 1.7d — Reliability Layer 8 (post-build verification: visual regression, SAST, perf, a11y, dead code, seeds)
 Next: Session 1.8 — Frontend pages & components
