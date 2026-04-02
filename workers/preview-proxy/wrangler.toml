@@ -1,0 +1,23 @@
+name = "forge-preview-proxy"
+main = "src/index.ts"
+compatibility_date = "2024-01-01"
+compatibility_flags = ["nodejs_compat"]
+
+routes = [
+  { pattern = "*.preview.forge.dev/*", zone_name = "preview.forge.dev" }
+]
+
+[vars]
+NHOST_JWKS_URL = "https://auth.nhost.run/.well-known/jwks.json"
+
+[[kv_namespaces]]
+binding = "SANDBOX_URLS"
+id = "REPLACE_WITH_REAL_KV_ID"
+
+[[durable_objects.bindings]]
+name = "PREVIEW_HMR"
+class_name = "PreviewHMR"
+
+[[migrations]]
+tag = "v1"
+new_classes = ["PreviewHMR"]
