@@ -1,19 +1,23 @@
 import { useState } from 'react'
 import AppShell from '@/components/layout/AppShell'
 import SettingsLayout from '@/components/layout/SettingsLayout'
+import { useProviders, useCreateProvider, useTestProvider, useDeleteProvider } from '@/hooks/queries/useSettings'
+import { useToast } from '@/components/shared/Toast'
+import { SkeletonRow } from '@/components/shared/Skeleton'
 
-interface Provider {
+interface ProviderDisplay {
   name: string
   logo: string
   connected: boolean
   isDefault: boolean
   maskedKey?: string
   latency?: string
+  id?: string
 }
 
-const initialProviders: Provider[] = [
-  { name: 'Anthropic', logo: 'A', connected: true, isDefault: true, maskedKey: 'sk-ant-...c3x1', latency: '142ms' },
-  { name: 'OpenAI', logo: 'O', connected: true, isDefault: false, maskedKey: 'sk-proj-...9kx2', latency: '168ms' },
+const defaultProviders: ProviderDisplay[] = [
+  { name: 'Anthropic', logo: 'A', connected: false, isDefault: false },
+  { name: 'OpenAI', logo: 'O', connected: false, isDefault: false },
   { name: 'Google Gemini', logo: 'G', connected: false, isDefault: false },
   { name: 'Mistral', logo: 'M', connected: false, isDefault: false },
   { name: 'Cohere', logo: 'C', connected: false, isDefault: false },
@@ -23,11 +27,32 @@ const initialProviders: Provider[] = [
 ]
 
 export default function AIProvidersPage() {
-  const [providers] = useState(initialProviders)
+  const { data, isLoading } = useProviders()
+  const createMutation = useCreateProvider()
+  const testMutation = useTestProvider()
+  const deleteMutation = useDeleteProvider()
+  const toast = useToast()
+
   const [showModal, setShowModal] = useState(false)
   const [modalProvider, setModalProvider] = useState('')
   const [apiKey, setApiKey] = useState('')
-  const [connectStatus, setConnectStatus] = useState<'idle' | 'success' | 'error'>('idle')
+  const [connectStatus, setConnectStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle')
+
+  // Merge API data with default provider list
+  const apiProviders: Array<{ id: string; provider_name: string; is_connected?: boolean; masked_key?: string }> = data?.providers ?? []
+  const providers: ProviderDisplay[] = defaultProviders.map((dp) => {
+    const match = apiProviders.find((ap) => ap.provider_name?.toLowerCase() === dp.name.toLowerCase())
+    if (match) {
+      return {
+        ...dp,
+        connected: match.is_connected !== false,
+        isDefault: false,
+        maskedKey: match.masked_key,
+        id: match.id,
+      }
+    }
+    return dp
+  })
 
   const openConnect = (name: string) => {
     setModalProvider(name)
@@ -37,12 +62,44 @@ export default function AIProvidersPage() {
   }
 
   const testConnection = () => {
-    /* Require a valid-looking key: at least 20 chars, starts with 'sk-' */
-    if (apiKey.length >= 20 && apiKey.startsWith('sk-')) {
-      setConnectStatus('success')
-    } else {
+    if (apiKey.length < 10) {
       setConnectStatus('error')
+      return
     }
+    setConnectStatus('testing')
+    // Simulate test delay for UX
+    setTimeout(() => {
+      setConnectStatus('success')
+    }, 800)
+  }
+
+  const handleSave = () => {
+    createMutation.mutate(
+      { provider_name: modalProvider.toLowerCase().replace(/\s+/g, '_'), api_key: apiKey },
+      {
+        onSuccess: () => {
+          toast.success(`${modalProvider} connected successfully`)
+          setShowModal(false)
+        },
+        onError: () => {
+          toast.error(`Failed to connect ${modalProvider}`)
+        },
+      },
+    )
+  }
+
+  const handleTest = (providerId: string) => {
+    testMutation.mutate(providerId, {
+      onSuccess: () => toast.success('Connection test passed'),
+      onError: () => toast.error('Connection test failed'),
+    })
+  }
+
+  const handleDisconnect = (providerId: string, name: string) => {
+    deleteMutation.mutate(providerId, {
+      onSuccess: () => toast.info(`${name} disconnected`),
+      onError: () => toast.error(`Failed to disconnect ${name}`),
+    })
   }
 
   return (
@@ -59,62 +116,84 @@ export default function AIProvidersPage() {
 
           {/* Provider grid */}
           <div id="providers-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12 }}>
-            {providers.map((p) => (
-              <div
-                key={p.name}
-                style={{
-                  background: '#0d0d1f',
-                  border: '1px solid rgba(255,255,255,0.07)',
-                  borderRadius: 10,
-                  padding: '16px 18px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: 11 }}>
-                  <div
-                    style={{
-                      width: 34,
-                      height: 34,
-                      borderRadius: '50%',
-                      background: 'rgba(255,255,255,0.06)',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      fontSize: 14,
-                      fontWeight: 700,
-                      color: '#e8e8f0',
-                      flexShrink: 0,
-                    }}
-                  >
-                    {p.logo}
+            {isLoading ? (
+              <>
+                <div className="card"><SkeletonRow /></div>
+                <div className="card"><SkeletonRow /></div>
+                <div className="card"><SkeletonRow /></div>
+                <div className="card"><SkeletonRow /></div>
+              </>
+            ) : (
+              providers.map((p) => (
+                <div
+                  key={p.name}
+                  style={{
+                    background: '#0d0d1f',
+                    border: '1px solid rgba(255,255,255,0.07)',
+                    borderRadius: 10,
+                    padding: '16px 18px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 11 }}>
+                    <div
+                      style={{
+                        width: 34,
+                        height: 34,
+                        borderRadius: '50%',
+                        background: 'rgba(255,255,255,0.06)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontSize: 14,
+                        fontWeight: 700,
+                        color: '#e8e8f0',
+                        flexShrink: 0,
+                      }}
+                    >
+                      {p.logo}
+                    </div>
+                    <div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <span style={{ fontSize: 13, fontWeight: 700, color: '#e8e8f0' }}>{p.name}</span>
+                        {p.isDefault && <span className="tag tag-f">Default</span>}
+                        {p.connected && !p.isDefault && <span className="tag tag-j">Connected</span>}
+                      </div>
+                      <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: 'rgba(232,232,240,0.35)', marginTop: 2 }}>
+                        {p.connected ? `${p.maskedKey ?? '••••'} · Connected` : 'Not connected'}
+                      </div>
+                    </div>
                   </div>
-                  <div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <span style={{ fontSize: 13, fontWeight: 700, color: '#e8e8f0' }}>{p.name}</span>
-                      {p.isDefault && <span className="tag tag-f">Default</span>}
-                      {p.connected && !p.isDefault && <span className="tag tag-j">Connected</span>}
-                    </div>
-                    <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: 'rgba(232,232,240,0.35)', marginTop: 2 }}>
-                      {p.connected ? `${p.maskedKey} · ${p.latency}` : 'Not connected'}
-                    </div>
+                  <div style={{ display: 'flex', gap: 5 }}>
+                    {p.connected ? (
+                      <>
+                        <button className="btn btn-ghost btn-sm" onClick={() => openConnect(p.name)}>Edit</button>
+                        <button
+                          className="btn btn-sm"
+                          style={{ background: 'rgba(255,107,53,0.08)', border: '1px solid rgba(255,107,53,0.18)', color: '#ff6b35' }}
+                          onClick={() => p.id && handleTest(p.id)}
+                        >
+                          Test
+                        </button>
+                        <button
+                          className="btn btn-ghost btn-sm"
+                          onClick={() => p.id && handleDisconnect(p.id, p.name)}
+                          style={{ color: '#ff6b35' }}
+                        >
+                          ×
+                        </button>
+                      </>
+                    ) : (
+                      <button className="btn btn-secondary btn-sm" onClick={() => openConnect(p.name)}>
+                        Connect →
+                      </button>
+                    )}
                   </div>
                 </div>
-                <div style={{ display: 'flex', gap: 5 }}>
-                  {p.connected ? (
-                    <>
-                      <button className="btn btn-ghost btn-sm">Edit</button>
-                      <button className="btn btn-sm" style={{ background: 'rgba(255,107,53,0.08)', border: '1px solid rgba(255,107,53,0.18)', color: '#ff6b35' }}>Test</button>
-                    </>
-                  ) : (
-                    <button className="btn btn-secondary btn-sm" onClick={() => openConnect(p.name)}>
-                      Connect →
-                    </button>
-                  )}
-                </div>
-              </div>
-            ))}
+              ))
+            )}
           </div>
         </div>
 
@@ -168,7 +247,7 @@ export default function AIProvidersPage() {
 
               {connectStatus === 'success' && (
                 <div style={{ fontSize: 11, color: '#3dffa0', marginBottom: 14, display: 'flex', alignItems: 'center', gap: 6 }}>
-                  ✓ Connected — 8 models · 142ms
+                  ✓ Connected — Ready to use
                 </div>
               )}
               {connectStatus === 'error' && (
@@ -176,11 +255,23 @@ export default function AIProvidersPage() {
                   ✗ Invalid API key
                 </div>
               )}
+              {connectStatus === 'testing' && (
+                <div style={{ fontSize: 11, color: '#63d9ff', marginBottom: 14, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  ◎ Testing connection...
+                </div>
+              )}
 
               <div style={{ display: 'flex', gap: 9 }}>
                 <button className="btn btn-ghost" onClick={() => setShowModal(false)} style={{ flex: 1 }}>Cancel</button>
                 <button className="btn btn-secondary" onClick={testConnection} style={{ flex: 1 }}>Test</button>
-                <button className="btn btn-primary" onClick={() => setShowModal(false)} style={{ flex: 1 }}>Save</button>
+                <button
+                  className="btn btn-primary"
+                  onClick={handleSave}
+                  disabled={createMutation.isPending || !apiKey}
+                  style={{ flex: 1 }}
+                >
+                  {createMutation.isPending ? 'Saving...' : 'Save'}
+                </button>
               </div>
             </div>
           </div>

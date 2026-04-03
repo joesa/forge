@@ -24,22 +24,53 @@ interface AuthState {
 
   /* ── Computed ──────────────────────────────────────────────────── */
   isAuthenticated: () => boolean
+  /** Shorthand for the current access token (used by API interceptor) */
+  readonly accessToken: string | null
 
   /* ── Actions ──────────────────────────────────────────────────── */
   setAuth: (user: User, tokens: AuthTokens) => void
   setUser: (user: User) => void
   setLoading: (loading: boolean) => void
+  setAccessToken: (token: string) => void
   logout: () => void
 }
+
+/* ── Synchronous localStorage bootstrap ───────────────────────── */
+/* Zustand persist rehydrates via Promise.resolve() which is async */
+/* (microtask). By reading localStorage directly during module     */
+/* init, the store's INITIAL state already contains persisted      */
+/* auth data — zero delay, zero race conditions.                   */
+
+function getPersistedAuth(): { user: User | null; tokens: AuthTokens | null } {
+  try {
+    const raw = localStorage.getItem('forge-auth')
+    if (raw) {
+      const parsed = JSON.parse(raw) as { state?: { user?: User; tokens?: AuthTokens } }
+      if (parsed?.state?.user && parsed?.state?.tokens) {
+        return { user: parsed.state.user, tokens: parsed.state.tokens }
+      }
+    }
+  } catch {
+    // localStorage unavailable or corrupt — start fresh
+  }
+  return { user: null, tokens: null }
+}
+
+const bootstrapped = getPersistedAuth()
 
 /* ── Store ─────────────────────────────────────────────────────── */
 
 export const useAuthStore = create<AuthState>()(
   persist(
     (set, get) => ({
-      user: null,
-      tokens: null,
+      // Use synchronously-bootstrapped values as initial state
+      user: bootstrapped.user,
+      tokens: bootstrapped.tokens,
       isLoading: false,
+
+      get accessToken() {
+        return get().tokens?.accessToken ?? null
+      },
 
       isAuthenticated: () => {
         const { tokens, user } = get()
@@ -56,6 +87,13 @@ export const useAuthStore = create<AuthState>()(
 
       setLoading: (isLoading) => {
         set({ isLoading })
+      },
+
+      setAccessToken: (token) => {
+        const currentTokens = get().tokens
+        if (currentTokens) {
+          set({ tokens: { ...currentTokens, accessToken: token } })
+        }
       },
 
       logout: () => {

@@ -47,7 +47,7 @@ async def _fetch_jwks() -> dict[str, Any]:
     if cached:
         return json.loads(cached)
 
-    url = f"{settings.NHOST_AUTH_URL}/v1/.well-known/jwks.json"
+    url = f"{settings.NHOST_AUTH_URL}/.well-known/jwks.json"
     async with httpx.AsyncClient(timeout=10) as client:
         resp = await client.get(url)
         resp.raise_for_status()
@@ -97,6 +97,18 @@ class AuthMiddleware(BaseHTTPMiddleware):
             )
 
         token = auth_header.split(" ", 1)[1]
+
+        # ── Dev-mode bypass ──────────────────────────────────────────
+        # When running locally with FORGE_ENV=development, accept the
+        # hardcoded dev-access-token so the UI dev fallback works
+        # without a real Nhost instance.
+        if settings.FORGE_ENV == "development" and token == "dev-access-token":
+            request.state.user = {
+                "sub": "00000000-0000-0000-0000-000000000001",
+                "email": "dev@forge.local",
+                "displayName": "Dev User",
+            }
+            return await call_next(request)
 
         try:
             # Decode header to get key id

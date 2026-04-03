@@ -65,6 +65,12 @@ class Settings(BaseSettings):
 
     # ── Cloudflare Turnstile ────────────────────────────────────────
     TURNSTILE_SECRET_KEY: str = ""
+    CLOUDFLARE_TURNSTILE_SECRET_KEY: str = ""
+
+    @property
+    def turnstile_secret(self) -> str:
+        """Return whichever Turnstile key is configured."""
+        return self.CLOUDFLARE_TURNSTILE_SECRET_KEY or self.TURNSTILE_SECRET_KEY
 
     # ── Monitoring ───────────────────────────────────────────────────
     SENTRY_DSN: str = ""

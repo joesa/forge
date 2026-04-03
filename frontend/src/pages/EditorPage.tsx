@@ -10,6 +10,7 @@ import HexLogo from '@/components/shared/HexLogo'
 import FileTree from '@/components/editor/FileTree'
 import EditorTabs from '@/components/editor/EditorTabs'
 import PreviewPane from '@/components/editor/PreviewPane'
+import Terminal from '@/components/editor/Terminal'
 import { useEditor } from '@/hooks/useEditor'
 import { useEditorStore } from '@/stores/editorStore'
 
@@ -49,6 +50,7 @@ export default function EditorPage() {
   /* Local UI state */
   const [activeActivity, setActiveActivity] = useState(0)
   const [chatInput, setChatInput] = useState('')
+  const [terminalVisible, setTerminalVisible] = useState(false)
 
   /* Store selectors */
   const previewVisible = useEditorStore((s) => s.previewVisible)
@@ -213,6 +215,25 @@ export default function EditorPage() {
           ))}
           <div style={{ flex: 1 }} />
           <button
+            onClick={() => setTerminalVisible((v) => !v)}
+            style={{
+              width: 34,
+              height: 34,
+              borderRadius: 6,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: 14,
+              cursor: 'pointer',
+              color: terminalVisible ? '#63d9ff' : 'rgba(232,232,240,0.40)',
+              background: terminalVisible ? 'rgba(99,217,255,0.08)' : 'transparent',
+              border: 'none',
+            }}
+            title="Toggle Terminal"
+          >
+            💻
+          </button>
+          <button
             style={{
               width: 34,
               height: 34,
@@ -327,6 +348,43 @@ export default function EditorPage() {
               </div>
             )}
           </div>
+
+          {/* Terminal Panel (collapsible) */}
+          {terminalVisible && (
+            <div
+              id="terminal-panel"
+              style={{
+                height: 180,
+                borderTop: '1px solid rgba(255,255,255,0.06)',
+                flexShrink: 0,
+                position: 'relative',
+              }}
+            >
+              <div
+                style={{
+                  position: 'absolute',
+                  top: 0,
+                  right: 8,
+                  zIndex: 2,
+                  padding: '4px 8px',
+                }}
+              >
+                <button
+                  onClick={() => setTerminalVisible(false)}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    color: 'rgba(232,232,240,0.30)',
+                    cursor: 'pointer',
+                    fontSize: 14,
+                  }}
+                >
+                  ×
+                </button>
+              </div>
+              <Terminal sandboxId={projectId ?? null} visible={terminalVisible} />
+            </div>
+          )}
         </div>
 
         {/* ---------------------------------------------------------- */}

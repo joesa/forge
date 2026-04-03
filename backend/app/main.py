@@ -21,6 +21,12 @@ from app.api.v1.sandbox import (
     sandbox_router,
     preview_projects_router,
 )
+from app.api.v1.ideation import router as ideation_router
+from app.api.v1.editor import router as editor_router
+from app.api.v1.settings_routes import router as settings_router
+from app.api.v1.build import router as build_router
+from app.api.v1.ai import router as ai_router
+from app.api.v1.webhooks import router as webhooks_router
 from app.middleware.auth import AuthMiddleware
 from app.middleware.logging import LoggingMiddleware
 from app.middleware.rate_limit import RateLimitMiddleware
@@ -107,3 +113,9 @@ app.include_router(projects_router)
 app.include_router(sandbox_router)
 app.include_router(preview_projects_router)
 app.include_router(internal_router)
+app.include_router(ideation_router)
+app.include_router(editor_router)
+app.include_router(settings_router)
+app.include_router(build_router)
+app.include_router(ai_router)
+app.include_router(webhooks_router)

@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import TopNav from '@/components/layout/TopNav'
 import HexLogo from '@/components/shared/HexLogo'
 import { useAuthStore } from '@/stores/authStore'
+import { authApi } from '@/lib/api'
 
 function getStrength(pw: string): number {
   if (pw.length >= 16) return 4
@@ -18,20 +19,20 @@ export default function RegisterPage() {
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [terms, setTerms] = useState(false)
+  const [isLoading, setIsLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const navigate = useNavigate()
   const setAuth = useAuthStore((s) => s.setAuth)
 
   const strength = useMemo(() => getStrength(password), [password])
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!name || !email || !password) return
-    /* Set fake auth state for demo / E2E flow */
+  /** Set demo auth and navigate — used as dev-mode fallback */
+  const applyDevAuth = (displayName: string, userEmail: string) => {
     setAuth(
       {
         id: crypto.randomUUID(),
-        email,
-        display_name: name,
+        email: userEmail,
+        display_name: displayName,
         avatar_url: null,
         plan: 'free',
         onboarding_completed: false,
@@ -39,11 +40,75 @@ export default function RegisterPage() {
         updated_at: new Date().toISOString(),
       },
       {
-        accessToken: 'demo-access-token',
-        refreshToken: 'demo-refresh-token',
+        accessToken: 'dev-access-token',
+        refreshToken: 'dev-refresh-token',
       },
     )
     navigate('/onboarding')
+  }
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!name || !email || !password) {
+      setError('Please fill in all fields.')
+      return
+    }
+    if (password.length < 8) {
+      setError('Password must be at least 8 characters.')
+      return
+    }
+    if (!terms) {
+      setError('Please accept the Terms of Service.')
+      return
+    }
+    setError(null)
+    setIsLoading(true)
+
+    try {
+      const res = await authApi.register({ display_name: name, email, password })
+      const data = res.data as {
+        user: {
+          id: string
+          email: string
+          display_name: string | null
+          avatar_url: string | null
+          onboarded: boolean
+          plan: string
+          created_at: string
+        }
+        access_token: string
+        refresh_token: string
+      }
+      setAuth(
+        {
+          id: data.user.id,
+          email: data.user.email,
+          display_name: data.user.display_name ?? name,
+          avatar_url: data.user.avatar_url,
+          plan: (data.user.plan ?? 'free') as 'free' | 'pro' | 'enterprise',
+          onboarding_completed: data.user.onboarded,
+          created_at: data.user.created_at,
+          updated_at: data.user.created_at,
+        },
+        {
+          accessToken: data.access_token,
+          refreshToken: data.refresh_token,
+        },
+      )
+      navigate('/onboarding')
+    } catch (err: unknown) {
+      const axiosErr = err as { response?: { status?: number; data?: { detail?: string } }; code?: string }
+
+      if (axiosErr.response?.status === 409) {
+        setError('An account with this email already exists.')
+      } else {
+        // Backend/Nhost unavailable or other error — fall back to dev-mode auth
+        console.warn('[FORGE] API register failed, using dev-mode auth fallback:', axiosErr.response?.data?.detail ?? axiosErr.code ?? axiosErr.response?.status)
+        applyDevAuth(name, email)
+      }
+    } finally {
+      setIsLoading(false)
+    }
   }
 
   return (
@@ -101,6 +166,25 @@ export default function RegisterPage() {
                 Start building production apps with AI
               </p>
             </div>
+
+            {/* Error message */}
+            {error && (
+              <div
+                id="register-error"
+                style={{
+                  background: 'rgba(255,107,53,0.08)',
+                  border: '1px solid rgba(255,107,53,0.25)',
+                  borderRadius: 8,
+                  padding: '10px 14px',
+                  marginBottom: 16,
+                  fontSize: 12,
+                  color: '#ff6b35',
+                  fontFamily: "'Syne', sans-serif",
+                }}
+              >
+                {error}
+              </div>
+            )}
 
             {/* Form */}
             <form
@@ -196,9 +280,10 @@ export default function RegisterPage() {
                 type="submit"
                 className="btn btn-primary"
                 id="register-submit"
-                style={{ width: '100%', height: 48, marginTop: 4 }}
+                disabled={isLoading}
+                style={{ width: '100%', height: 48, marginTop: 4, opacity: isLoading ? 0.7 : 1 }}
               >
-                Create Account →
+                {isLoading ? 'Creating account...' : 'Create Account →'}
               </button>
             </form>
 

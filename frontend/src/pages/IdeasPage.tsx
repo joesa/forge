@@ -1,55 +1,33 @@
-import { useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import AppShell from '@/components/layout/AppShell'
+import { useIdeas, useSaveIdea, useSelectIdea } from '@/hooks/queries/useIdeation'
 
 interface IdeaData {
   id: string
   title: string
-  tagline: string
-  problem: string
-  solution: string
-  uniqueness: number
-  complexity: number
-  market: string
-  revenue: string
-  techStack: string[]
-  saved: boolean
+  tagline: string | null
+  problem: string | null
+  solution: string | null
+  uniqueness?: number
+  complexity?: number
+  market: string | null
+  revenue_model: string | null
+  tech_stack: string[]
+  features: string[]
+  is_selected: boolean
 }
 
-const mockIdeas: IdeaData[] = [
-  {
-    id: 'i1', title: 'CodeReview AI', tagline: 'AI-powered code review that learns your team patterns',
-    problem: 'Code reviews are slow and inconsistent across teams. Senior developers spend 30% of their time reviewing PRs.',
-    solution: 'An AI agent that learns team coding patterns and provides instant, contextual code reviews with actionable suggestions.',
-    uniqueness: 8.5, complexity: 7, market: '$4.2B', revenue: 'Subscription', techStack: ['Next.js', 'Python', 'OpenAI', 'PostgreSQL'], saved: false,
-  },
-  {
-    id: 'i2', title: 'SupplySync', tagline: 'Real-time supply chain visibility for SMBs',
-    problem: 'Small businesses lack visibility into their supply chain, leading to stockouts and overordering.',
-    solution: 'A lightweight platform that connects suppliers, warehouses, and retailers with real-time tracking and predictive analytics.',
-    uniqueness: 7.2, complexity: 6, market: '$8.7B', revenue: 'Freemium', techStack: ['React', 'Node.js', 'MongoDB', 'Stripe'], saved: false,
-  },
-  {
-    id: 'i3', title: 'MeetingMind', tagline: 'Turn meetings into structured action items automatically',
-    problem: 'Teams lose 31 hours monthly in unproductive meetings with no clear outcomes.',
-    solution: 'Transcribe, summarize, and extract action items from meetings with auto-assignment and deadline tracking.',
-    uniqueness: 6.8, complexity: 5, market: '$2.1B', revenue: 'Subscription', techStack: ['Next.js', 'Whisper', 'Supabase', 'Resend'], saved: false,
-  },
-  {
-    id: 'i4', title: 'GreenCompute', tagline: 'Carbon-aware cloud computing scheduler',
-    problem: 'Cloud workloads generate significant carbon emissions by running in high-carbon-intensity regions.',
-    solution: 'Intelligent scheduler that routes non-urgent compute to regions and times with lowest carbon intensity.',
-    uniqueness: 9.1, complexity: 8, market: '$1.8B', revenue: 'Usage-based', techStack: ['FastAPI', 'React', 'Redis', 'Docker'], saved: false,
-  },
-  {
-    id: 'i5', title: 'LearnPath', tagline: 'Personalized learning roadmaps powered by skill assessment',
-    problem: 'Online learners waste time on content too easy or advanced for them, leading to high dropout rates.',
-    solution: 'Adaptive assessment engine that maps current skills and generates optimized learning paths from curated resources.',
-    uniqueness: 7.5, complexity: 6, market: '$5.3B', revenue: 'Freemium', techStack: ['Next.js', 'OpenAI', 'PostgreSQL', 'Stripe'], saved: false,
-  },
-]
-
-function IdeaCard({ idea, index, onToggleSave }: { idea: IdeaData; index: number; onToggleSave: () => void }) {
+function IdeaCard({
+  idea,
+  index,
+  onSave,
+  onBuild,
+}: {
+  idea: IdeaData
+  index: number
+  onSave: () => void
+  onBuild: () => void
+}) {
   return (
     <div
       id={`idea-card-${idea.id}`}
@@ -69,79 +47,117 @@ function IdeaCard({ idea, index, onToggleSave }: { idea: IdeaData; index: number
         }}
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-          <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 8, color: '#f5c842' }}>
-            ★ {idea.uniqueness}/10 uniqueness
-          </span>
-          <span className="tag tag-v" style={{ fontSize: 8 }}>◆ {idea.complexity}/10 complexity</span>
+          {idea.uniqueness != null && (
+            <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 8, color: '#f5c842' }}>
+              ★ {idea.uniqueness}/10 uniqueness
+            </span>
+          )}
+          {idea.complexity != null && (
+            <span className="tag tag-v" style={{ fontSize: 8 }}>◆ {idea.complexity}/10 complexity</span>
+          )}
         </div>
         <div style={{ fontSize: 16, fontWeight: 800, letterSpacing: '-0.5px', color: '#e8e8f0', marginBottom: 3 }}>
           {idea.title}
         </div>
-        <div style={{ fontSize: 11, color: 'rgba(232,232,240,0.45)', fontStyle: 'italic' }}>
-          {idea.tagline}
-        </div>
+        {idea.tagline && (
+          <div style={{ fontSize: 11, color: 'rgba(232,232,240,0.45)', fontStyle: 'italic' }}>
+            {idea.tagline}
+          </div>
+        )}
       </div>
 
       {/* Content */}
       <div style={{ padding: '13px 16px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-        <div style={{ marginBottom: 10 }}>
-          <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 8, textTransform: 'uppercase', letterSpacing: 1, color: 'rgba(232,232,240,0.30)', marginBottom: 3 }}>
-            PROBLEM
+        {idea.problem && (
+          <div style={{ marginBottom: 10 }}>
+            <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 8, textTransform: 'uppercase', letterSpacing: 1, color: 'rgba(232,232,240,0.30)', marginBottom: 3 }}>
+              PROBLEM
+            </div>
+            <div style={{ fontSize: 11, color: 'rgba(232,232,240,0.60)', lineHeight: 1.5 }}>{idea.problem}</div>
           </div>
-          <div style={{ fontSize: 11, color: 'rgba(232,232,240,0.60)', lineHeight: 1.5 }}>{idea.problem}</div>
-        </div>
-        <div style={{ marginBottom: 10 }}>
-          <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 8, textTransform: 'uppercase', letterSpacing: 1, color: 'rgba(232,232,240,0.30)', marginBottom: 3 }}>
-            SOLUTION
+        )}
+        {idea.solution && (
+          <div style={{ marginBottom: 10 }}>
+            <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 8, textTransform: 'uppercase', letterSpacing: 1, color: 'rgba(232,232,240,0.30)', marginBottom: 3 }}>
+              SOLUTION
+            </div>
+            <div style={{ fontSize: 11, color: 'rgba(232,232,240,0.60)', lineHeight: 1.5 }}>{idea.solution}</div>
           </div>
-          <div style={{ fontSize: 11, color: 'rgba(232,232,240,0.60)', lineHeight: 1.5 }}>{idea.solution}</div>
-        </div>
+        )}
         <div style={{ display: 'flex', gap: 14 }}>
-          <div>
-            <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 8, textTransform: 'uppercase', letterSpacing: 1, color: 'rgba(232,232,240,0.30)', marginBottom: 2 }}>
-              MARKET
+          {idea.market && (
+            <div>
+              <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 8, textTransform: 'uppercase', letterSpacing: 1, color: 'rgba(232,232,240,0.30)', marginBottom: 2 }}>MARKET</div>
+              <div style={{ fontSize: 12, fontWeight: 700, color: '#63d9ff' }}>{idea.market}</div>
             </div>
-            <div style={{ fontSize: 12, fontWeight: 700, color: '#63d9ff' }}>{idea.market}</div>
-          </div>
-          <div>
-            <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 8, textTransform: 'uppercase', letterSpacing: 1, color: 'rgba(232,232,240,0.30)', marginBottom: 2 }}>
-              REVENUE
+          )}
+          {idea.revenue_model && (
+            <div>
+              <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 8, textTransform: 'uppercase', letterSpacing: 1, color: 'rgba(232,232,240,0.30)', marginBottom: 2 }}>REVENUE</div>
+              <div style={{ fontSize: 12, fontWeight: 700, color: '#63d9ff' }}>{idea.revenue_model}</div>
             </div>
-            <div style={{ fontSize: 12, fontWeight: 700, color: '#63d9ff' }}>{idea.revenue}</div>
-          </div>
+          )}
         </div>
       </div>
 
       {/* Tech Stack */}
-      <div style={{ padding: '10px 16px', borderBottom: '1px solid rgba(255,255,255,0.06)', display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-        {idea.techStack.map((t) => (
-          <span key={t} className="tag tag-f">{t}</span>
-        ))}
-      </div>
+      {idea.tech_stack.length > 0 && (
+        <div style={{ padding: '10px 16px', borderBottom: '1px solid rgba(255,255,255,0.06)', display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+          {idea.tech_stack.map((t) => (
+            <span key={t} className="tag tag-f">{t}</span>
+          ))}
+        </div>
+      )}
 
       {/* Actions */}
       <div style={{ padding: '10px 16px', display: 'flex', gap: 7 }}>
         <button
           className="btn btn-ghost btn-sm"
-          onClick={onToggleSave}
-          style={idea.saved ? { color: '#3dffa0', borderColor: 'rgba(61,255,160,0.22)' } : {}}
+          onClick={onSave}
+          style={idea.is_selected ? { color: '#3dffa0', borderColor: 'rgba(61,255,160,0.22)' } : {}}
         >
-          {idea.saved ? '💾 Saved' : '💾 Save'}
+          {idea.is_selected ? '💾 Saved' : '💾 Save'}
         </button>
-        <button className="btn btn-ghost btn-sm">↻</button>
-        <Link to="/pipeline/new" className="btn btn-primary btn-sm" style={{ flex: 1, textDecoration: 'none' }}>
+        <button className="btn btn-primary btn-sm" onClick={onBuild} style={{ flex: 1 }}>
           🚀 Build This
-        </Link>
+        </button>
       </div>
     </div>
   )
 }
 
 export default function IdeasPage() {
-  const [ideas, setIdeas] = useState(mockIdeas)
+  const { id: sessionId = '' } = useParams<{ id: string }>()
+  const navigate = useNavigate()
+  const { data, isLoading, error } = useIdeas(sessionId)
+  const saveIdea = useSaveIdea()
+  const selectIdea = useSelectIdea()
 
-  const toggleSave = (id: string) => {
-    setIdeas((prev) => prev.map((idea) => idea.id === id ? { ...idea, saved: !idea.saved } : idea))
+  const ideas: IdeaData[] = (data?.ideas ?? []).map((i: Record<string, unknown>) => ({
+    id: String(i.id),
+    title: String(i.title || ''),
+    tagline: i.tagline as string | null,
+    problem: i.problem as string | null,
+    solution: i.solution as string | null,
+    uniqueness: (i as Record<string, unknown>).uniqueness as number | undefined,
+    complexity: (i as Record<string, unknown>).complexity as number | undefined,
+    market: i.market as string | null,
+    revenue_model: i.revenue_model as string | null,
+    tech_stack: (i.tech_stack as string[]) || [],
+    features: (i.features as string[]) || [],
+    is_selected: Boolean(i.is_selected),
+  }))
+
+  const handleBuild = (ideaId: string) => {
+    selectIdea.mutate(ideaId, {
+      onSuccess: (data: { project_id: string; pipeline_id: string }) => {
+        navigate(`/pipeline/${data.pipeline_id}`)
+      },
+    })
+  }
+
+  const handleSave = (ideaId: string) => {
+    saveIdea.mutate(ideaId)
   }
 
   return (
@@ -156,28 +172,77 @@ export default function IdeasPage() {
               <span className="tag tag-m" style={{ fontSize: 8 }}>/ideate/ideas</span>
             </div>
             <p style={{ fontSize: 12, color: 'rgba(232,232,240,0.42)' }}>
-              5 AI-generated ideas · Private for 7 days · Based on your answers
+              {isLoading ? 'Generating ideas...' : `${ideas.length} AI-generated ideas · Private for 7 days`}
             </p>
           </div>
-          <button className="btn btn-ghost btn-sm">↻ Regenerate All</button>
         </div>
+
+        {/* Loading state */}
+        {isLoading && (
+          <div style={{ textAlign: 'center', padding: '80px 0', fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: 'rgba(232,232,240,0.42)' }}>
+            <div style={{ marginBottom: 14, fontSize: 24 }}>💡</div>
+            Generating ideas with AI...
+          </div>
+        )}
+
+        {/* Error state */}
+        {error && (
+          <div style={{ textAlign: 'center', padding: '80px 0', fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: '#ff6b35' }}>
+            Failed to load ideas. Please try again.
+          </div>
+        )}
+
+        {/* Empty state */}
+        {!isLoading && !error && ideas.length === 0 && (
+          <div style={{ textAlign: 'center', padding: '80px 0' }}>
+            <div style={{ fontSize: 32, marginBottom: 14 }}>💭</div>
+            <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: 'rgba(232,232,240,0.42)', marginBottom: 20 }}>
+              No ideas generated yet
+            </div>
+            <Link to="/ideate" className="btn btn-primary">Start Ideation →</Link>
+          </div>
+        )}
 
         {/* Ideas grid — 3 top, 2 bottom */}
-        <div id="ideas-top-row" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 12 }}>
-          {ideas.slice(0, 3).map((idea, i) => (
-            <IdeaCard key={idea.id} idea={idea} index={i} onToggleSave={() => toggleSave(idea.id)} />
-          ))}
-        </div>
-        <div id="ideas-bottom-row" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12 }}>
-          {ideas.slice(3, 5).map((idea, i) => (
-            <IdeaCard key={idea.id} idea={idea} index={i + 3} onToggleSave={() => toggleSave(idea.id)} />
-          ))}
-        </div>
+        {ideas.length > 0 && (
+          <>
+            <div
+              id="ideas-top-row"
+              style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 12 }}
+            >
+              {ideas.slice(0, 3).map((idea, i) => (
+                <IdeaCard
+                  key={idea.id}
+                  idea={idea}
+                  index={i}
+                  onSave={() => handleSave(idea.id)}
+                  onBuild={() => handleBuild(idea.id)}
+                />
+              ))}
+            </div>
+            <div
+              id="ideas-bottom-row"
+              style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12 }}
+            >
+              {ideas.slice(3, 5).map((idea, i) => (
+                <IdeaCard
+                  key={idea.id}
+                  idea={idea}
+                  index={i + 3}
+                  onSave={() => handleSave(idea.id)}
+                  onBuild={() => handleBuild(idea.id)}
+                />
+              ))}
+            </div>
+          </>
+        )}
 
         {/* Footer */}
-        <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: 'rgba(232,232,240,0.20)', textAlign: 'center', marginTop: 22 }}>
-          Ideas private for 7 days · Similar ideas may surface to other users after expiry
-        </div>
+        {ideas.length > 0 && (
+          <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: 'rgba(232,232,240,0.20)', textAlign: 'center', marginTop: 22 }}>
+            Ideas private for 7 days · Similar ideas may surface to other users after expiry
+          </div>
+        )}
       </div>
     </AppShell>
   )

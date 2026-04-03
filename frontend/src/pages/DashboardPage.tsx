@@ -1,39 +1,49 @@
 import { Link } from 'react-router-dom'
 import AppShell from '@/components/layout/AppShell'
+import { useProjects } from '@/hooks/queries/useProjects'
+import { SkeletonCard } from '@/components/shared/Skeleton'
 
-const statCards = [
-  { icon: '📁', value: '7', label: 'Total Projects' },
-  { icon: '⚙️', value: '2', label: 'Active Builds' },
-  { icon: '▲', value: '14', label: 'Deployments' },
-  { icon: '⚡', value: '847k / 2M', label: 'Tokens', hasProgress: true },
+/* ── Fallback mock data (used when API is not connected) ───────── */
+
+const fallbackStats = [
+  { icon: '📁', value: '0', label: 'Total Projects' },
+  { icon: '⚙️', value: '0', label: 'Active Builds' },
+  { icon: '▲', value: '0', label: 'Deployments' },
+  { icon: '⚡', value: '0 / 2M', label: 'Tokens', hasProgress: true },
 ]
 
-const projects = [
-  { id: 'p1', name: 'SaaS Dashboard', desc: 'Customer analytics platform with real-time metrics and team management', framework: 'Next.js', status: 'live' as const },
-  { id: 'p2', name: 'E-Commerce API', desc: 'Headless commerce API with Stripe payments and inventory system', framework: 'FastAPI + React', status: 'building' as const },
-  { id: 'p3', name: 'DevOps Monitor', desc: 'Infrastructure monitoring tool with alerting and incident management', framework: 'React + Vite', status: 'draft' as const },
-]
-
-const activities = [
-  { color: '#3dffa0', text: 'Deployed SaaS Dashboard to production', project: 'SaaS Dashboard', time: '2m ago' },
-  { color: '#63d9ff', text: 'Build completed for E-Commerce API', project: 'E-Commerce API', time: '18m ago' },
-  { color: '#b06bff', text: 'AI generated 5 new ideas', project: 'Ideation', time: '1h ago' },
-  { color: '#ff6b35', text: 'Error in DevOps Monitor build pipeline', project: 'DevOps Monitor', time: '3h ago' },
-  { color: '#3dffa0', text: 'Connected OpenAI API key', project: 'Settings', time: '5h ago' },
-]
-
-const statusBadge = (status: 'live' | 'building' | 'draft' | 'error') => {
-  const map = {
+const statusBadge = (status: string) => {
+  const map: Record<string, { cls: string; text: string }> = {
     live: { cls: 'status-live', text: '● Live' },
     building: { cls: 'status-building', text: '◎ Building' },
     draft: { cls: 'status-draft', text: '✦ Draft' },
     error: { cls: 'status-error', text: '⚠ Error' },
   }
-  const s = map[status]
+  const s = map[status] ?? map['draft']
   return <span className={`tag ${s.cls}`}>{s.text}</span>
 }
 
+interface ProjectData {
+  id: string
+  name: string
+  description?: string
+  framework?: string
+  status?: string
+}
+
 export default function DashboardPage() {
+  const { data: projectsData, isLoading } = useProjects()
+
+  const projects: ProjectData[] = projectsData?.projects ?? []
+  const recentProjects = projects.slice(0, 3)
+
+  const stats = [
+    { icon: '📁', value: String(projects.length || fallbackStats[0].value), label: 'Total Projects' },
+    { icon: '⚙️', value: String(projects.filter((p: ProjectData) => p.status === 'building').length), label: 'Active Builds' },
+    { icon: '▲', value: '0', label: 'Deployments' },
+    { icon: '⚡', value: '0 / 2M', label: 'Tokens', hasProgress: true },
+  ]
+
   return (
     <AppShell>
       <div style={{ padding: '34px 32px', maxWidth: 1160 }}>
@@ -47,7 +57,7 @@ export default function DashboardPage() {
 
         {/* Stat cards */}
         <div id="dashboard-stats" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 36 }}>
-          {statCards.map((stat) => (
+          {stats.map((stat) => (
             <div
               key={stat.label}
               style={{
@@ -73,9 +83,9 @@ export default function DashboardPage() {
               <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: 'rgba(232,232,240,0.40)', marginTop: 4 }}>
                 {stat.label}
               </div>
-              {stat.hasProgress && (
+              {'hasProgress' in stat && stat.hasProgress && (
                 <div style={{ height: 3, background: 'rgba(255,255,255,0.07)', borderRadius: 2, marginTop: 8, overflow: 'hidden' }}>
-                  <div style={{ width: '42%', height: '100%', background: '#63d9ff', borderRadius: 2 }} />
+                  <div style={{ width: '0%', height: '100%', background: '#63d9ff', borderRadius: 2 }} />
                 </div>
               )}
             </div>
@@ -89,34 +99,49 @@ export default function DashboardPage() {
             <Link to="/projects" className="btn btn-ghost btn-sm">View all</Link>
           </div>
           <div id="dashboard-projects" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
-            {projects.map((p) => (
-              <div key={p.id} className="card" id={`project-card-${p.id}`}>
-                <div
-                  style={{
-                    height: 80,
-                    borderRadius: 8,
-                    background: 'linear-gradient(135deg, rgba(99,217,255,0.08), rgba(176,107,255,0.08))',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    marginBottom: 12,
-                  }}
-                >
-                  <span style={{ fontSize: 28 }}>⬡</span>
+            {isLoading ? (
+              <>
+                <SkeletonCard />
+                <SkeletonCard />
+                <SkeletonCard />
+              </>
+            ) : recentProjects.length > 0 ? (
+              recentProjects.map((p: ProjectData) => (
+                <div key={p.id} className="card" id={`project-card-${p.id}`}>
+                  <div
+                    style={{
+                      height: 80,
+                      borderRadius: 8,
+                      background: 'linear-gradient(135deg, rgba(99,217,255,0.08), rgba(176,107,255,0.08))',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      marginBottom: 12,
+                    }}
+                  >
+                    <span style={{ fontSize: 28 }}>⬡</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+                    {statusBadge(p.status ?? 'draft')}
+                    <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: 'rgba(232,232,240,0.42)' }}>
+                      {p.framework ?? 'React'}
+                    </span>
+                  </div>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: '#e8e8f0', marginBottom: 3 }}>{p.name}</div>
+                  <div style={{ fontSize: 11, color: 'rgba(232,232,240,0.40)', marginBottom: 13, lineHeight: 1.5 }}>{p.description}</div>
+                  <Link to={`/projects/${p.id}/editor`} className="btn btn-secondary btn-sm" style={{ width: '100%', textDecoration: 'none' }}>
+                    Open Editor →
+                  </Link>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
-                  {statusBadge(p.status)}
-                  <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: 'rgba(232,232,240,0.42)' }}>
-                    {p.framework}
-                  </span>
-                </div>
-                <div style={{ fontSize: 13, fontWeight: 700, color: '#e8e8f0', marginBottom: 3 }}>{p.name}</div>
-                <div style={{ fontSize: 11, color: 'rgba(232,232,240,0.40)', marginBottom: 13, lineHeight: 1.5 }}>{p.desc}</div>
-                <Link to={`/projects/${p.id}/editor`} className="btn btn-secondary btn-sm" style={{ width: '100%', textDecoration: 'none' }}>
-                  Open Editor →
-                </Link>
+              ))
+            ) : (
+              <div style={{ gridColumn: '1 / -1', textAlign: 'center', padding: '40px 0' }}>
+                <div style={{ fontSize: 44, marginBottom: 12 }}>⬡</div>
+                <div style={{ fontSize: 17, fontWeight: 700, color: '#e8e8f0', marginBottom: 6 }}>No projects yet</div>
+                <div style={{ fontSize: 12, color: 'rgba(232,232,240,0.40)', marginBottom: 16 }}>Start building your first application</div>
+                <Link to="/projects/new" className="btn btn-primary" style={{ textDecoration: 'none' }}>Start Building →</Link>
               </div>
-            ))}
+            )}
           </div>
         </div>
 
@@ -131,29 +156,19 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* Recent Activity */}
+        {/* Recent Activity — placeholder until activity endpoint exists */}
         <div>
           <h2 style={{ fontSize: 17, fontWeight: 700, color: '#e8e8f0', marginBottom: 13 }}>Recent Activity</h2>
           <div id="activity-feed" style={{ display: 'flex', flexDirection: 'column' }}>
-            {activities.map((a, i) => (
-              <div
-                key={i}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 12,
-                  padding: '9px 0',
-                  borderBottom: '1px solid rgba(255,255,255,0.05)',
-                }}
-              >
-                <div style={{ width: 7, height: 7, borderRadius: '50%', background: a.color, flexShrink: 0 }} />
-                <span style={{ fontSize: 12, color: '#e8e8f0', flex: 1 }}>{a.text}</span>
-                <span className="tag tag-f">{a.project}</span>
-                <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: 'rgba(232,232,240,0.35)', flexShrink: 0 }}>
-                  {a.time}
-                </span>
-              </div>
-            ))}
+            <div style={{
+              padding: '20px 0',
+              textAlign: 'center',
+              fontSize: 12,
+              color: 'rgba(232,232,240,0.30)',
+              fontFamily: "'JetBrains Mono', monospace",
+            }}>
+              Activity will appear here as you build
+            </div>
           </div>
         </div>
       </div>

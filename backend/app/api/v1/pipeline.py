@@ -16,7 +16,7 @@ import json
 import uuid
 
 import structlog
-from fastapi import APIRouter, Depends, Header, Request, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
 from sqlalchemy import update as sa_update
 from sqlalchemy import select
@@ -318,6 +318,42 @@ async def get_pipeline_stages(
         stages=stages,
         gate_results=gate_responses,
     )
+
+
+# ── POST /{id}/cancel ────────────────────────────────────────────────
+
+@router.post("/{pipeline_id}/cancel")
+async def cancel_pipeline(
+    pipeline_id: uuid.UUID,
+    request: Request,
+    write_session: AsyncSession = Depends(get_write_session),
+) -> dict:
+    """Cancel a running pipeline."""
+    user_id = _get_user_id(request)
+
+    result = await write_session.execute(
+        select(PipelineRun).where(
+            PipelineRun.id == pipeline_id,
+            PipelineRun.user_id == user_id,
+        )
+    )
+    pipeline = result.scalar_one_or_none()
+
+    if not pipeline:
+        raise HTTPException(status_code=404, detail="Pipeline not found")
+
+    if pipeline.status in ("completed", "cancelled", "failed"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Pipeline already {pipeline.status}",
+        )
+
+    pipeline.status = "cancelled"
+    await write_session.commit()
+
+    logger.info("pipeline_cancelled", pipeline_id=str(pipeline_id), user_id=str(user_id))
+
+    return {"id": str(pipeline_id), "status": "cancelled"}
 
 
 # ── WS /{id}/stream ──────────────────────────────────────────────────

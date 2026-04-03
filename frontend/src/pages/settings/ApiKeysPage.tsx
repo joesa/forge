@@ -1,171 +1,248 @@
 import { useState } from 'react'
 import AppShell from '@/components/layout/AppShell'
 import SettingsLayout from '@/components/layout/SettingsLayout'
+import { useApiKeys, useCreateApiKey, useDeleteApiKey } from '@/hooks/queries/useSettings'
+import { useToast } from '@/components/shared/Toast'
+import { SkeletonRow } from '@/components/shared/Skeleton'
 
-interface ApiKey {
+interface ApiKeyData {
   id: string
   name: string
-  prefix: string
-  lastUsed: string
-  expires: string
+  prefix?: string
+  last_used?: string | null
+  expires_at?: string | null
+  created_at: string
 }
 
-const mockKeys: ApiKey[] = [
-  { id: 'k1', name: 'Production App', prefix: 'forge_pk_...x3k1', lastUsed: '2 hours ago', expires: 'Never' },
-  { id: 'k2', name: 'CI/CD Pipeline', prefix: 'forge_pk_...m7n2', lastUsed: '1 day ago', expires: '30 days' },
-  { id: 'k3', name: 'Development', prefix: 'forge_pk_...q9p4', lastUsed: '5 min ago', expires: '90 days' },
-]
-
 export default function ApiKeysPage() {
-  const [keys] = useState(mockKeys)
-  const [showCreate, setShowCreate] = useState(false)
-  const [showSuccess, setShowSuccess] = useState(false)
+  const { data, isLoading } = useApiKeys()
+  const createMutation = useCreateApiKey()
+  const deleteMutation = useDeleteApiKey()
+  const toast = useToast()
+
+  const [showCreateModal, setShowCreateModal] = useState(false)
+  const [showSuccessModal, setShowSuccessModal] = useState(false)
   const [keyName, setKeyName] = useState('')
-  const [keyExpiry, setKeyExpiry] = useState('never')
-  const generatedKey = 'forge_pk_live_2xK9mN4vR7bQ3pL8wJ6cF1dH5aE0gT4yU9iO2kS7zX3'
+  const [expiry, setExpiry] = useState('never')
+  const [createdKeyValue, setCreatedKeyValue] = useState('')
+  const [copied, setCopied] = useState(false)
+
+  const keys: ApiKeyData[] = data?.keys ?? []
 
   const handleCreate = () => {
-    setShowCreate(false)
-    setShowSuccess(true)
+    const expiresInDays = expiry === 'never' ? undefined : parseInt(expiry, 10)
+    createMutation.mutate(
+      { name: keyName, expires_in_days: expiresInDays },
+      {
+        onSuccess: (result: Record<string, unknown>) => {
+          setShowCreateModal(false)
+          setCreatedKeyValue((result as { key?: string }).key ?? 'forge_key_' + Math.random().toString(36).slice(2))
+          setShowSuccessModal(true)
+          toast.success('API key created')
+        },
+        onError: () => toast.error('Failed to create API key'),
+      },
+    )
+  }
+
+  const handleDelete = (id: string) => {
+    if (!window.confirm('Delete this API key? This cannot be undone.')) return
+    deleteMutation.mutate(id, {
+      onSuccess: () => toast.success('API key deleted'),
+      onError: () => toast.error('Failed to delete API key'),
+    })
+  }
+
+  const copyKey = async () => {
+    await navigator.clipboard.writeText(createdKeyValue)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
   }
 
   return (
     <AppShell>
       <SettingsLayout>
         <div>
+          {/* Header */}
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-            <div>
-              <h1 style={{ fontSize: 26, fontWeight: 800, color: '#e8e8f0', marginBottom: 4 }}>API Keys</h1>
-              <span className="tag tag-m" style={{ fontSize: 8 }}>/settings/api-keys</span>
-            </div>
-            <button className="btn btn-primary" onClick={() => { setShowCreate(true); setKeyName(''); setKeyExpiry('never') }} id="create-key-btn">
+            <h1 style={{ fontSize: 26, fontWeight: 800, color: '#e8e8f0' }}>API Keys</h1>
+            <button className="btn btn-primary" onClick={() => { setKeyName(''); setExpiry('never'); setShowCreateModal(true) }}>
               + Create API Key
             </button>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+            <span className="tag tag-m" style={{ fontSize: 8 }}>/settings/api-keys</span>
           </div>
           <p style={{ fontSize: 12, color: 'rgba(232,232,240,0.42)', marginBottom: 26 }}>
             Manage your API keys for programmatic access
           </p>
 
-          {/* Keys table */}
-          <div
-            id="keys-table"
-            style={{
-              background: '#0d0d1f',
-              border: '1px solid rgba(255,255,255,0.06)',
-              borderRadius: 12,
-              overflow: 'hidden',
-            }}
-          >
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead>
-                <tr>
-                  {['Name', 'Prefix', 'Last Used', 'Expires', 'Actions'].map((h) => (
-                    <th
-                      key={h}
-                      style={{
-                        fontFamily: "'JetBrains Mono', monospace",
-                        fontSize: 9,
-                        textTransform: 'uppercase',
-                        letterSpacing: 1,
-                        color: 'rgba(232,232,240,0.30)',
-                        padding: '10px 14px',
-                        textAlign: 'left',
-                        borderBottom: '1px solid rgba(255,255,255,0.06)',
-                        fontWeight: 500,
-                      }}
-                    >
-                      {h}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {keys.map((k, i) => (
-                  <tr key={k.id} style={{ borderBottom: i < keys.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none' }}>
-                    <td style={{ padding: '10px 14px', fontSize: 12, fontWeight: 600, color: '#e8e8f0' }}>{k.name}</td>
-                    <td style={{ padding: '10px 14px', fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: 'rgba(232,232,240,0.42)' }}>{k.prefix}</td>
-                    <td style={{ padding: '10px 14px', fontSize: 11, color: 'rgba(232,232,240,0.42)' }}>{k.lastUsed}</td>
-                    <td style={{ padding: '10px 14px', fontSize: 11, color: 'rgba(232,232,240,0.42)' }}>{k.expires}</td>
-                    <td style={{ padding: '10px 14px' }}>
-                      <button className="btn btn-danger btn-sm" style={{ height: 26, fontSize: 9 }}>Delete</button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          {/* Keys Table */}
+          <div style={{
+            background: '#0d0d1f',
+            border: '1px solid rgba(255,255,255,0.06)',
+            borderRadius: 12,
+            overflow: 'hidden',
+          }}>
+            {/* TH */}
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: '1fr 120px 120px 120px 80px',
+              padding: '10px 16px',
+              borderBottom: '1px solid rgba(255,255,255,0.06)',
+              fontFamily: "'JetBrains Mono', monospace",
+              fontSize: 9,
+              textTransform: 'uppercase' as const,
+              letterSpacing: '1px',
+              color: 'rgba(232,232,240,0.40)',
+            }}>
+              <span>Name</span>
+              <span>Prefix</span>
+              <span>Last Used</span>
+              <span>Expires</span>
+              <span>Actions</span>
+            </div>
+
+            {isLoading ? (
+              <>
+                <SkeletonRow />
+                <SkeletonRow />
+              </>
+            ) : keys.length > 0 ? (
+              keys.map((k: ApiKeyData) => (
+                <div key={k.id} style={{
+                  display: 'grid',
+                  gridTemplateColumns: '1fr 120px 120px 120px 80px',
+                  padding: '12px 16px',
+                  alignItems: 'center',
+                  borderBottom: '1px solid rgba(255,255,255,0.04)',
+                }}>
+                  <span style={{ fontSize: 12, fontWeight: 600, color: '#e8e8f0' }}>{k.name}</span>
+                  <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: '#63d9ff' }}>
+                    {k.prefix ?? '••••'}
+                  </span>
+                  <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: 'rgba(232,232,240,0.35)' }}>
+                    {k.last_used ? new Date(k.last_used).toLocaleDateString() : 'Never'}
+                  </span>
+                  <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: 'rgba(232,232,240,0.35)' }}>
+                    {k.expires_at ? new Date(k.expires_at).toLocaleDateString() : 'Never'}
+                  </span>
+                  <button
+                    className="btn btn-danger btn-sm"
+                    style={{ height: 26, fontSize: 10 }}
+                    onClick={() => handleDelete(k.id)}
+                    disabled={deleteMutation.isPending}
+                  >
+                    Delete
+                  </button>
+                </div>
+              ))
+            ) : (
+              <div style={{ padding: 40, textAlign: 'center' }}>
+                <div style={{ fontSize: 24, marginBottom: 8 }}>🔑</div>
+                <div style={{ fontSize: 13, color: '#e8e8f0', fontWeight: 600, marginBottom: 4 }}>No API keys</div>
+                <div style={{ fontSize: 11, color: 'rgba(232,232,240,0.40)' }}>Create one to get started</div>
+              </div>
+            )}
           </div>
         </div>
 
         {/* Create Key Modal */}
-        {showCreate && (
+        {showCreateModal && (
           <div
-            style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(8px)', zIndex: 500, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-            onClick={() => setShowCreate(false)}
+            style={{
+              position: 'fixed', inset: 0,
+              background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(8px)',
+              zIndex: 500, display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}
+            onClick={() => setShowCreateModal(false)}
           >
             <div
               onClick={(e) => e.stopPropagation()}
-              style={{ background: '#0d0d1f', border: '1px solid rgba(99,217,255,0.22)', borderRadius: 16, padding: 34, maxWidth: 420, width: '100%', animation: 'fade-in 200ms ease' }}
+              style={{
+                background: '#0d0d1f',
+                border: '1px solid rgba(99,217,255,0.22)',
+                borderRadius: 16, padding: 34, maxWidth: 420, width: '100%',
+                animation: 'fade-in 200ms ease',
+              }}
             >
-              <h2 style={{ fontSize: 18, fontWeight: 800, color: '#e8e8f0', marginBottom: 16 }}>Create API Key</h2>
-              <div style={{ marginBottom: 12 }}>
-                <label className="lbl" htmlFor="key-name">KEY NAME</label>
-                <input id="key-name" className="input" placeholder="My API Key" value={keyName} onChange={(e) => setKeyName(e.target.value)} />
+              <h2 style={{ fontSize: 18, fontWeight: 800, color: '#e8e8f0', marginBottom: 18 }}>Create API Key</h2>
+              <div style={{ marginBottom: 14 }}>
+                <label className="lbl">Key Name</label>
+                <input className="input" placeholder="e.g. production-server" value={keyName} onChange={(e) => setKeyName(e.target.value)} />
               </div>
               <div style={{ marginBottom: 18 }}>
-                <label className="lbl" htmlFor="key-expiry">EXPIRES</label>
-                <select id="key-expiry" className="input" value={keyExpiry} onChange={(e) => setKeyExpiry(e.target.value)} style={{ cursor: 'pointer' }}>
+                <label className="lbl">Expires</label>
+                <select
+                  className="input"
+                  value={expiry}
+                  onChange={(e) => setExpiry(e.target.value)}
+                  style={{ cursor: 'pointer' }}
+                >
                   <option value="never">Never</option>
-                  <option value="30d">30 days</option>
-                  <option value="90d">90 days</option>
+                  <option value="30">30 days</option>
+                  <option value="90">90 days</option>
                 </select>
               </div>
               <div style={{ display: 'flex', gap: 9 }}>
-                <button className="btn btn-ghost" onClick={() => setShowCreate(false)} style={{ flex: 1 }}>Cancel</button>
-                <button className="btn btn-primary" onClick={handleCreate} style={{ flex: 1 }}>Create</button>
+                <button className="btn btn-ghost" onClick={() => setShowCreateModal(false)} style={{ flex: 1 }}>Cancel</button>
+                <button
+                  className="btn btn-primary"
+                  onClick={handleCreate}
+                  disabled={!keyName || createMutation.isPending}
+                  style={{ flex: 1 }}
+                >
+                  {createMutation.isPending ? 'Creating...' : 'Create'}
+                </button>
               </div>
             </div>
           </div>
         )}
 
-        {/* Success Modal */}
-        {showSuccess && (
+        {/* Success Modal — one-time key display */}
+        {showSuccessModal && (
           <div
-            style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(8px)', zIndex: 500, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-            onClick={() => setShowSuccess(false)}
+            style={{
+              position: 'fixed', inset: 0,
+              background: 'rgba(0,0,0,0.80)', backdropFilter: 'blur(10px)',
+              zIndex: 501, display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}
           >
             <div
-              onClick={(e) => e.stopPropagation()}
-              style={{ background: '#0d0d1f', border: '1px solid rgba(245,200,66,0.30)', borderRadius: 16, padding: 34, maxWidth: 460, width: '100%', animation: 'fade-in 200ms ease' }}
+              style={{
+                background: '#0d0d1f',
+                border: '1px solid rgba(245,200,66,0.25)',
+                borderRadius: 16, padding: 34, maxWidth: 460, width: '100%',
+                animation: 'fade-in 200ms ease',
+              }}
             >
               <div style={{ fontSize: 11, color: '#f5c842', marginBottom: 14, display: 'flex', alignItems: 'center', gap: 6 }}>
                 ⚠️ This key will only be shown once
               </div>
-              <div
-                style={{
-                  background: '#04040a',
-                  border: '1px solid rgba(255,255,255,0.08)',
-                  borderRadius: 8,
-                  padding: '12px 14px',
-                  fontFamily: "'JetBrains Mono', monospace",
-                  fontSize: 11,
-                  color: '#63d9ff',
-                  wordBreak: 'break-all',
-                  marginBottom: 14,
-                }}
-              >
-                {generatedKey}
+              <div style={{
+                background: '#04040a',
+                border: '1px solid rgba(255,255,255,0.08)',
+                borderRadius: 8,
+                padding: '12px 14px',
+                fontFamily: "'JetBrains Mono', monospace",
+                fontSize: 11,
+                color: '#63d9ff',
+                wordBreak: 'break-all',
+                marginBottom: 18,
+              }}>
+                {createdKeyValue}
               </div>
               <button
                 className="btn btn-primary"
-                style={{ width: '100%', marginBottom: 8 }}
-                onClick={() => navigator.clipboard.writeText(generatedKey)}
+                style={{ width: '100%', marginBottom: 9 }}
+                onClick={copyKey}
               >
-                ⎘ Copy to Clipboard
+                {copied ? '✓ Copied!' : '⎘ Copy to Clipboard'}
               </button>
               <button
                 className="btn btn-ghost"
                 style={{ width: '100%' }}
-                onClick={() => setShowSuccess(false)}
+                onClick={() => { setShowSuccessModal(false); setCreatedKeyValue('') }}
               >
                 I&apos;ve saved this key safely
               </button>

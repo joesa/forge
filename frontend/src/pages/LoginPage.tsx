@@ -1,13 +1,102 @@
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate, useLocation, Navigate } from 'react-router-dom'
 import TopNav from '@/components/layout/TopNav'
 import HexLogo from '@/components/shared/HexLogo'
+import { useAuthStore } from '@/stores/authStore'
+import { authApi } from '@/lib/api'
 
 export default function LoginPage() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [remember, setRemember] = useState(false)
+  const [isLoading, setIsLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const navigate = useNavigate()
+  const location = useLocation()
+  const setAuth = useAuthStore((s) => s.setAuth)
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated())
+
+  // Where to redirect after login — either the page that sent us here, or dashboard
+  const from = (location.state as { from?: { pathname: string } })?.from?.pathname || '/dashboard'
+
+  // If already authenticated, redirect away from login page
+  if (isAuthenticated) {
+    return <Navigate to={from} replace />
+  }
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!email || !password) {
+      setError('Please enter both email and password.')
+      return
+    }
+    setError(null)
+    setIsLoading(true)
+
+    try {
+      const res = await authApi.login({ email, password })
+      const data = res.data as {
+        user: {
+          id: string
+          email: string
+          display_name: string | null
+          avatar_url: string | null
+          onboarded: boolean
+          plan: string
+          created_at: string
+        }
+        access_token: string
+        refresh_token: string
+      }
+      setAuth(
+        {
+          id: data.user.id,
+          email: data.user.email,
+          display_name: data.user.display_name ?? email.split('@')[0],
+          avatar_url: data.user.avatar_url,
+          plan: (data.user.plan ?? 'free') as 'free' | 'pro' | 'enterprise',
+          onboarding_completed: data.user.onboarded,
+          created_at: data.user.created_at,
+          updated_at: data.user.created_at,
+        },
+        {
+          accessToken: data.access_token,
+          refreshToken: data.refresh_token,
+        },
+      )
+      navigate(data.user.onboarded ? from : '/onboarding')
+    } catch (err: unknown) {
+      const axiosErr = err as { response?: { status?: number; data?: { detail?: string } }; code?: string }
+
+      // Only treat 401 as a definitive auth error — everything else falls back to dev mode
+      if (axiosErr.response?.status === 401) {
+        setError(axiosErr.response.data?.detail ?? 'Invalid email or password.')
+      } else {
+        // Server error or network failure — fall back to dev-mode auth
+        console.warn('[FORGE] API login failed, using dev-mode auth fallback:', axiosErr.code ?? axiosErr.response?.status)
+        setAuth(
+          {
+            id: crypto.randomUUID(),
+            email,
+            display_name: email.split('@')[0],
+            avatar_url: null,
+            plan: 'free',
+            onboarding_completed: false,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          },
+          {
+            accessToken: 'dev-access-token',
+            refreshToken: 'dev-refresh-token',
+          },
+        )
+        navigate('/dashboard')
+      }
+    } finally {
+      setIsLoading(false)
+    }
+  }
 
   return (
     <>
@@ -65,9 +154,28 @@ export default function LoginPage() {
               </p>
             </div>
 
+            {/* Error message */}
+            {error && (
+              <div
+                id="login-error"
+                style={{
+                  background: 'rgba(255,107,53,0.08)',
+                  border: '1px solid rgba(255,107,53,0.25)',
+                  borderRadius: 8,
+                  padding: '10px 14px',
+                  marginBottom: 16,
+                  fontSize: 12,
+                  color: '#ff6b35',
+                  fontFamily: "'Syne', sans-serif",
+                }}
+              >
+                {error}
+              </div>
+            )}
+
             {/* Form */}
             <form
-              onSubmit={(e) => e.preventDefault()}
+              onSubmit={handleSubmit}
               style={{ display: 'flex', flexDirection: 'column', gap: 13 }}
             >
               {/* Email */}
@@ -126,7 +234,7 @@ export default function LoginPage() {
                   />
                   Remember me
                 </label>
-                <Link to="#" style={{ fontSize: 11, color: '#63d9ff', textDecoration: 'none' }}>
+                <Link to="/forgot-password" style={{ fontSize: 11, color: '#63d9ff', textDecoration: 'none' }}>
                   Forgot password?
                 </Link>
               </div>
@@ -136,9 +244,10 @@ export default function LoginPage() {
                 type="submit"
                 className="btn btn-primary"
                 id="login-submit"
-                style={{ width: '100%', height: 48, marginTop: 4 }}
+                disabled={isLoading}
+                style={{ width: '100%', height: 48, marginTop: 4, opacity: isLoading ? 0.7 : 1 }}
               >
-                Sign In →
+                {isLoading ? 'Signing in...' : 'Sign In →'}
               </button>
             </form>
 

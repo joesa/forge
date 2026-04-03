@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import AppShell from '@/components/layout/AppShell'
+import { projectsApi, pipelineApi } from '@/lib/api'
 
 const cloudServices = ['Supabase', 'Stripe', 'OpenAI', 'Resend', 'Twilio', 'AWS S3', 'Cloudflare', 'Auth0', 'Pinecone', 'SendGrid']
 const frameworks = ['Next.js', 'React + Vite', 'Remix', 'FastAPI + React']
@@ -11,7 +12,36 @@ export default function NewProjectPage() {
   const [aiEnhance, setAiEnhance] = useState(true)
   const [selectedServices, setSelectedServices] = useState<string[]>([])
   const [selectedFramework, setSelectedFramework] = useState('Next.js')
+  const [isSubmitting, setIsSubmitting] = useState(false)
   const navigate = useNavigate()
+
+  const handleStartBuild = async () => {
+    if (!prompt.trim() || isSubmitting) return
+    setIsSubmitting(true)
+    try {
+      const name = prompt.trim().split('\n')[0].slice(0, 80)
+      const projectRes = await projectsApi.create({
+        name,
+        description: prompt,
+        framework: selectedFramework,
+        prompt,
+      })
+      const projectId = projectRes.data.id as string
+      const pipelineRes = await pipelineApi.run({
+        project_id: projectId,
+        idea_spec: {
+          prompt,
+          framework: selectedFramework,
+          cloud_services: selectedServices,
+          ai_enhance: aiEnhance,
+        },
+      })
+      navigate(`/pipeline/${pipelineRes.data.pipeline_id as string}`)
+    } catch (err) {
+      console.error('Failed to start build:', err)
+      setIsSubmitting(false)
+    }
+  }
 
   const toggleService = (s: string) => {
     setSelectedServices((prev) =>
@@ -206,9 +236,10 @@ export default function NewProjectPage() {
               className="btn btn-primary"
               id="start-build-btn"
               style={{ width: '100%', height: 50, fontSize: 14 }}
-              onClick={() => navigate(`/pipeline/${crypto.randomUUID().slice(0, 8)}`)}
+              disabled={!prompt.trim() || isSubmitting}
+              onClick={handleStartBuild}
             >
-              Start Building →
+              {isSubmitting ? 'Starting...' : 'Start Building →'}
             </button>
             <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, textAlign: 'center', color: 'rgba(232,232,240,0.30)', marginTop: 9 }}>
               Estimated build time: 8–15 minutes · Zero broken builds guaranteed

@@ -85,60 +85,22 @@ async def test_register_success(client: AsyncClient):
             new_callable=AsyncMock,
             return_value=NHOST_REGISTER_RESPONSE,
         ),
-        patch(
-            "app.api.v1.auth.get_write_session",
-        ) as mock_ws,
     ):
-        # Mock the write session dependency
-        mock_session = AsyncMock()
-        mock_flush = AsyncMock()
-        mock_session.flush = mock_flush
+        resp = await client.post(
+            "/api/v1/auth/register",
+            json={
+                "email": "new@forge.dev",
+                "password": "StrongPass123!",
+                "display_name": "New User",
+            },
+            headers={"X-Turnstile-Token": "valid-token"},
+        )
 
-        # When refresh is called, set user attributes
-        async def fake_refresh(user):
-            user.id = uuid.UUID(FAKE_USER_ID)
-            user.email = "new@forge.dev"
-            user.display_name = "New User"
-            user.avatar_url = None
-            user.onboarded = False
-            user.plan = "free"
-            user.created_at = datetime(2026, 3, 31, tzinfo=timezone.utc)
-
-        mock_session.refresh = AsyncMock(side_effect=fake_refresh)
-        mock_session.add = MagicMock()
-
-        async def session_gen():
-            yield mock_session
-
-        mock_ws.return_value = session_gen().__anext__
-
-        # Override the dependency directly
-        from app.main import app
-        from app.core.database import get_write_session
-
-        async def override_write_session():
-            yield mock_session
-
-        app.dependency_overrides[get_write_session] = override_write_session
-
-        try:
-            resp = await client.post(
-                "/api/v1/auth/register",
-                json={
-                    "email": "new@forge.dev",
-                    "password": "StrongPass123!",
-                    "display_name": "New User",
-                },
-                headers={"X-Turnstile-Token": "valid-token"},
-            )
-
-            assert resp.status_code == 201
-            data = resp.json()
-            assert data["access_token"] == FAKE_ACCESS_TOKEN
-            assert data["refresh_token"] == FAKE_REFRESH_TOKEN
-            assert data["user"]["email"] == "new@forge.dev"
-        finally:
-            app.dependency_overrides.pop(get_write_session, None)
+        assert resp.status_code == 201
+        data = resp.json()
+        assert data["access_token"] == FAKE_ACCESS_TOKEN
+        assert data["refresh_token"] == FAKE_REFRESH_TOKEN
+        assert data["user"]["email"] == "new@forge.dev"
 
 
 @pytest.mark.anyio
@@ -191,46 +153,24 @@ async def test_register_short_password(client: AsyncClient):
 @pytest.mark.anyio
 async def test_login_success(client: AsyncClient):
     """Successful login returns 200 with tokens + user."""
-    fake_user = _make_fake_user()
-
-    with (
-        patch(
-            "app.api.v1.auth.login_user",
-            new_callable=AsyncMock,
-            return_value=NHOST_LOGIN_RESPONSE,
-        ),
-        patch(
-            "app.api.v1.auth.get_current_user",
-            new_callable=AsyncMock,
-            return_value=fake_user,
-        ),
+    with patch(
+        "app.api.v1.auth.login_user",
+        new_callable=AsyncMock,
+        return_value=NHOST_LOGIN_RESPONSE,
     ):
-        from app.main import app
-        from app.core.database import get_read_session
+        resp = await client.post(
+            "/api/v1/auth/login",
+            json={
+                "email": "user@forge.dev",
+                "password": "CorrectPass123!",
+            },
+        )
 
-        mock_session = AsyncMock()
-
-        async def override_read_session():
-            yield mock_session
-
-        app.dependency_overrides[get_read_session] = override_read_session
-
-        try:
-            resp = await client.post(
-                "/api/v1/auth/login",
-                json={
-                    "email": "user@forge.dev",
-                    "password": "CorrectPass123!",
-                },
-            )
-
-            assert resp.status_code == 200
-            data = resp.json()
-            assert data["access_token"] == FAKE_ACCESS_TOKEN
-            assert data["refresh_token"] == FAKE_REFRESH_TOKEN
-            assert data["user"]["email"] == "user@forge.dev"
-        finally:
-            app.dependency_overrides.pop(get_read_session, None)
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["access_token"] == FAKE_ACCESS_TOKEN
+        assert data["refresh_token"] == FAKE_REFRESH_TOKEN
+        assert data["user"]["email"] == "user@forge.dev"
 
 
 @pytest.mark.anyio

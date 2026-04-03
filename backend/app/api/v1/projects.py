@@ -401,3 +401,123 @@ async def rename_file(
         return JSONResponse(
             status_code=500, content={"detail": "Failed to rename file"}
         )
+
+
+@router.post("/{project_id}/files", response_model=MessageResponse, status_code=201)
+async def create_file(
+    project_id: uuid.UUID,
+    request: Request,
+    write_session: AsyncSession = Depends(get_write_session),
+) -> MessageResponse | JSONResponse:
+    """Create a new file in the project."""
+    try:
+        user_id = _extract_user_id(request)
+    except ValueError as exc:
+        return JSONResponse(status_code=401, content={"detail": str(exc)})
+
+    try:
+        body = await request.json()
+        path = body.get("path", "")
+        content = body.get("content", "")
+        await project_service.save_file_content(
+            project_id=project_id,
+            user_id=user_id,
+            file_path=path,
+            content=content,
+            session=write_session,
+        )
+        return MessageResponse(message="File created successfully")
+    except Exception as exc:
+        logger.error("create_file_failed", error=str(exc))
+        return JSONResponse(status_code=500, content={"detail": "Failed to create file"})
+
+
+@router.get("/{project_id}/builds")
+async def list_project_builds(
+    project_id: uuid.UUID,
+    request: Request,
+    read_session: AsyncSession = Depends(get_read_session),
+) -> JSONResponse:
+    """List all builds for a project."""
+    try:
+        user_id = _extract_user_id(request)
+    except ValueError as exc:
+        return JSONResponse(status_code=401, content={"detail": str(exc)})
+
+    try:
+        from app.services.build_service import list_builds
+        builds = await list_builds(str(project_id), str(user_id), read_session)
+        return JSONResponse(content={"builds": [
+            {
+                "id": str(b.id),
+                "status": b.status.value if hasattr(b.status, "value") else str(b.status),
+                "build_number": b.build_number,
+                "created_at": b.created_at.isoformat(),
+                "started_at": b.started_at.isoformat() if b.started_at else None,
+                "completed_at": b.completed_at.isoformat() if b.completed_at else None,
+                "error_summary": b.error_summary,
+            } for b in builds
+        ]})
+    except LookupError as exc:
+        return JSONResponse(status_code=404, content={"detail": str(exc)})
+    except Exception as exc:
+        logger.error("list_builds_failed", error=str(exc))
+        return JSONResponse(status_code=500, content={"detail": "Failed to list builds"})
+
+
+@router.get("/{project_id}/deployments")
+async def list_project_deployments(
+    project_id: uuid.UUID,
+    request: Request,
+    read_session: AsyncSession = Depends(get_read_session),
+) -> JSONResponse:
+    """List all deployments for a project."""
+    try:
+        user_id = _extract_user_id(request)
+    except ValueError as exc:
+        return JSONResponse(status_code=401, content={"detail": str(exc)})
+
+    try:
+        from app.services.deployment_service import list_deployments
+        deployments = await list_deployments(str(project_id), str(user_id), read_session)
+        return JSONResponse(content={"deployments": [
+            {
+                "id": str(d.id),
+                "status": d.status.value if hasattr(d.status, "value") else str(d.status),
+                "url": d.url,
+                "created_at": d.created_at.isoformat(),
+            } for d in deployments
+        ]})
+    except LookupError as exc:
+        return JSONResponse(status_code=404, content={"detail": str(exc)})
+    except Exception as exc:
+        logger.error("list_deployments_failed", error=str(exc))
+        return JSONResponse(status_code=500, content={"detail": "Failed to list deployments"})
+
+
+@router.post("/{project_id}/deploy")
+async def deploy_project(
+    project_id: uuid.UUID,
+    request: Request,
+    write_session: AsyncSession = Depends(get_write_session),
+) -> JSONResponse:
+    """Trigger a deployment for the project."""
+    try:
+        user_id = _extract_user_id(request)
+    except ValueError as exc:
+        return JSONResponse(status_code=401, content={"detail": str(exc)})
+
+    try:
+        from app.services.deployment_service import create_deployment
+        deployment = await create_deployment(str(project_id), str(user_id), write_session)
+        return JSONResponse(content={
+            "id": str(deployment.id),
+            "status": deployment.status.value if hasattr(deployment.status, "value") else str(deployment.status),
+            "url": deployment.url,
+            "created_at": deployment.created_at.isoformat(),
+        })
+    except LookupError as exc:
+        return JSONResponse(status_code=404, content={"detail": str(exc)})
+    except Exception as exc:
+        logger.error("deploy_failed", error=str(exc))
+        return JSONResponse(status_code=500, content={"detail": "Failed to deploy"})

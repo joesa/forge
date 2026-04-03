@@ -13,9 +13,10 @@ interface RequireAuthProps {
 /**
  * Route guard that checks the auth store for a valid session.
  *
- * If the user is not authenticated, they are redirected to `/login`
- * with the original URL saved in `location.state.from` so the login
- * page can redirect back after a successful sign-in.
+ * The auth store is bootstrapped synchronously from localStorage
+ * during module init (see authStore.ts), so isAuthenticated()
+ * returns the correct value on the very first render — no
+ * hydration delay, no race conditions.
  */
 export default function RequireAuth({ children }: RequireAuthProps) {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated())

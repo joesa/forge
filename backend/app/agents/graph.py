@@ -188,8 +188,8 @@ async def csuite_analysis(state: PipelineState) -> dict[str, Any]:
     gate_results = dict(state.get("gate_results", {}))
     errors = list(state.get("errors", []))
 
-    # Create AI router (stub for now — production will use real provider)
-    ai_router = create_ai_router(provider="stub")
+    # Create AI router — auto-selects Anthropic/OpenAI if keys are configured
+    ai_router = create_ai_router()
 
     # Run all 8 C-Suite agents in parallel
     tasks = [
@@ -250,7 +250,7 @@ async def synthesis(state: PipelineState) -> dict[str, Any]:
     gate_results = dict(state.get("gate_results", {}))
     errors = list(state.get("errors", []))
 
-    ai_router = create_ai_router(provider="stub")
+    ai_router = create_ai_router()
 
     # First attempt
     comprehensive_plan = await run_synthesizer(state, ai_router)
@@ -535,7 +535,7 @@ async def build(state: PipelineState) -> dict[str, Any]:
     snapshot_urls: list[str] = list(state.get("snapshot_urls", []))
 
     # Create utilities
-    ai_router = create_ai_router(provider="stub")
+    ai_router = create_ai_router()
     cwm = ContextWindowManager(ai_router)
     snapshot_service = SnapshotService()
 
@@ -758,7 +758,7 @@ async def review_agent_node(state: PipelineState) -> dict[str, Any]:
     manifest = state.get("build_manifest", {})
 
     # Run the real review agent
-    ai_router = create_ai_router(provider="stub")
+    ai_router = create_ai_router()
     cwm = ContextWindowManager(ai_router)
 
     review_result = await run_review_agent(state, ai_router, cwm)

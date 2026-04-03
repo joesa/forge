@@ -1,6 +1,7 @@
 import { lazy, Suspense } from 'react'
 import { Routes, Route } from 'react-router-dom'
 import RequireAuth from '@/components/auth/RequireAuth'
+import { ToastContainer } from '@/components/shared/Toast'
 
 /* ------------------------------------------------------------------ */
 /*  Lazy-load all page components                                      */
@@ -8,10 +9,16 @@ import RequireAuth from '@/components/auth/RequireAuth'
 const LandingPage = lazy(() => import('@/pages/LandingPage'))
 const LoginPage = lazy(() => import('@/pages/LoginPage'))
 const RegisterPage = lazy(() => import('@/pages/RegisterPage'))
+const ForgotPasswordPage = lazy(() => import('@/pages/ForgotPasswordPage'))
+const ResetPasswordPage = lazy(() => import('@/pages/ResetPasswordPage'))
 const OnboardingPage = lazy(() => import('@/pages/OnboardingPage'))
 const DashboardPage = lazy(() => import('@/pages/DashboardPage'))
 const ProjectsPage = lazy(() => import('@/pages/ProjectsPage'))
 const NewProjectPage = lazy(() => import('@/pages/NewProjectPage'))
+const ProjectDetailPage = lazy(() => import('@/pages/ProjectDetailPage'))
+const BuildHistoryPage = lazy(() => import('@/pages/BuildHistoryPage'))
+const DeploymentsPage = lazy(() => import('@/pages/DeploymentsPage'))
+const ProjectSettingsPage = lazy(() => import('@/pages/ProjectSettingsPage'))
 const IdeationPage = lazy(() => import('@/pages/IdeationPage'))
 const QuestionnairePage = lazy(() => import('@/pages/QuestionnairePage'))
 const IdeasPage = lazy(() => import('@/pages/IdeasPage'))
@@ -73,42 +80,54 @@ function LoadingFallback() {
 /* ------------------------------------------------------------------ */
 function App() {
   return (
-    <Suspense fallback={<LoadingFallback />}>
-      <Routes>
-        {/* Public / Landing */}
-        <Route path="/" element={<LandingPage />} />
-        <Route path="/login" element={<LoginPage />} />
-        <Route path="/register" element={<RegisterPage />} />
-        <Route path="/onboarding" element={<OnboardingPage />} />
+    <>
+      <ToastContainer />
+      <Suspense fallback={<LoadingFallback />}>
+        <Routes>
+          {/* Public / Landing */}
+          <Route path="/" element={<LandingPage />} />
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/register" element={<RegisterPage />} />
+          <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+          <Route path="/reset-password" element={<ResetPasswordPage />} />
 
-        {/* Main App — requires authentication */}
-        <Route path="/dashboard" element={<RequireAuth><DashboardPage /></RequireAuth>} />
-        <Route path="/projects" element={<RequireAuth><ProjectsPage /></RequireAuth>} />
-        <Route path="/projects/new" element={<RequireAuth><NewProjectPage /></RequireAuth>} />
-        <Route path="/projects/:id/editor" element={<RequireAuth><EditorPage /></RequireAuth>} />
+          {/* Onboarding — requires authentication */}
+          <Route path="/onboarding" element={<RequireAuth><OnboardingPage /></RequireAuth>} />
 
-        {/* Ideation — requires authentication */}
-        <Route path="/ideate" element={<RequireAuth><IdeationPage /></RequireAuth>} />
-        <Route path="/ideate/questionnaire/:id" element={<RequireAuth><QuestionnairePage /></RequireAuth>} />
-        <Route path="/ideate/ideas/:id" element={<RequireAuth><IdeasPage /></RequireAuth>} />
+          {/* Main App — requires authentication */}
+          <Route path="/dashboard" element={<RequireAuth><DashboardPage /></RequireAuth>} />
+          <Route path="/projects" element={<RequireAuth><ProjectsPage /></RequireAuth>} />
+          <Route path="/projects/new" element={<RequireAuth><NewProjectPage /></RequireAuth>} />
+          <Route path="/projects/:id" element={<RequireAuth><ProjectDetailPage /></RequireAuth>} />
+          <Route path="/projects/:id/editor" element={<RequireAuth><EditorPage /></RequireAuth>} />
+          <Route path="/projects/:id/builds" element={<RequireAuth><BuildHistoryPage /></RequireAuth>} />
+          <Route path="/projects/:id/deployments" element={<RequireAuth><DeploymentsPage /></RequireAuth>} />
+          <Route path="/projects/:id/settings" element={<RequireAuth><ProjectSettingsPage /></RequireAuth>} />
 
-        {/* Pipeline — requires authentication */}
-        <Route path="/pipeline/:id" element={<RequireAuth><PipelinePage /></RequireAuth>} />
+          {/* Ideation — requires authentication */}
+          <Route path="/ideate" element={<RequireAuth><IdeationPage /></RequireAuth>} />
+          <Route path="/ideate/questionnaire/:id" element={<RequireAuth><QuestionnairePage /></RequireAuth>} />
+          <Route path="/ideate/ideas/:id" element={<RequireAuth><IdeasPage /></RequireAuth>} />
 
-        {/* Settings — requires authentication */}
-        <Route path="/settings/profile" element={<RequireAuth><ProfilePage /></RequireAuth>} />
-        <Route path="/settings/ai-providers" element={<RequireAuth><AIProvidersPage /></RequireAuth>} />
-        <Route path="/settings/model-routing" element={<RequireAuth><ModelRoutingPage /></RequireAuth>} />
-        <Route path="/settings/integrations" element={<RequireAuth><IntegrationsPage /></RequireAuth>} />
-        <Route path="/settings/api-keys" element={<RequireAuth><ApiKeysPage /></RequireAuth>} />
-        <Route path="/settings/security" element={<RequireAuth><SecurityPage /></RequireAuth>} />
-        <Route path="/settings/billing" element={<RequireAuth><BillingPage /></RequireAuth>} />
+          {/* Pipeline — requires authentication */}
+          <Route path="/pipeline/:id" element={<RequireAuth><PipelinePage /></RequireAuth>} />
 
-        {/* Fallback — redirect to landing */}
-        <Route path="*" element={<LandingPage />} />
-      </Routes>
-    </Suspense>
+          {/* Settings — requires authentication */}
+          <Route path="/settings/profile" element={<RequireAuth><ProfilePage /></RequireAuth>} />
+          <Route path="/settings/ai-providers" element={<RequireAuth><AIProvidersPage /></RequireAuth>} />
+          <Route path="/settings/model-routing" element={<RequireAuth><ModelRoutingPage /></RequireAuth>} />
+          <Route path="/settings/integrations" element={<RequireAuth><IntegrationsPage /></RequireAuth>} />
+          <Route path="/settings/api-keys" element={<RequireAuth><ApiKeysPage /></RequireAuth>} />
+          <Route path="/settings/security" element={<RequireAuth><SecurityPage /></RequireAuth>} />
+          <Route path="/settings/billing" element={<RequireAuth><BillingPage /></RequireAuth>} />
+
+          {/* Fallback — redirect to landing */}
+          <Route path="*" element={<LandingPage />} />
+        </Routes>
+      </Suspense>
+    </>
   )
 }
 
 export default App
+

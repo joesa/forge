@@ -1,7 +1,38 @@
-import { Link } from 'react-router-dom'
+import { useState } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
 import TopNav from '@/components/layout/TopNav'
+import { useStartQuestionnaire, useGenerateDirect } from '@/hooks/queries/useIdeation'
 
 export default function IdeationPage() {
+  const navigate = useNavigate()
+  const startQuestionnaire = useStartQuestionnaire()
+  const generateDirect = useGenerateDirect()
+  const [loading, setLoading] = useState<'questionnaire' | 'surprise' | null>(null)
+
+  const handleQuestionnaire = () => {
+    setLoading('questionnaire')
+    startQuestionnaire.mutate(undefined, {
+      onSuccess: (data: { session_id: string }) => {
+        navigate(`/ideate/questionnaire/${data.session_id}`)
+      },
+      onError: () => {
+        setLoading(null)
+      },
+    })
+  }
+
+  const handleSurprise = () => {
+    setLoading('surprise')
+    generateDirect.mutate(undefined, {
+      onSuccess: (data: { session_id: string }) => {
+        navigate(`/ideate/ideas/${data.session_id}`)
+      },
+      onError: () => {
+        setLoading(null)
+      },
+    })
+  }
+
   return (
     <>
       <div className="grid-bg" aria-hidden="true" />
@@ -50,31 +81,40 @@ export default function IdeationPage() {
 
           {/* 3 option cards */}
           <div id="ideation-options" style={{ display: 'flex', flexDirection: 'column', gap: 10, width: '100%' }}>
-            {/* Card 1 — violet accent */}
-            <Link
-              to="/ideate/questionnaire/new"
-              className="card va"
+            {/* Card 1 — questionnaire */}
+            <button
               id="ideation-questionnaire"
+              className="card va"
+              onClick={handleQuestionnaire}
+              disabled={loading !== null}
               style={{
                 display: 'flex',
                 alignItems: 'center',
                 gap: 14,
                 padding: '18px 22px',
-                textDecoration: 'none',
-                cursor: 'pointer',
+                cursor: loading !== null ? 'not-allowed' : 'pointer',
+                width: '100%',
+                textAlign: 'left',
+                background: 'none',
+                border: 'none',
+                opacity: loading !== null && loading !== 'questionnaire' ? 0.5 : 1,
               }}
             >
-              <span style={{ fontSize: 26, flexShrink: 0 }}>💡</span>
+              <span style={{ fontSize: 26, flexShrink: 0 }}>
+                {loading === 'questionnaire' ? '⏳' : '💡'}
+              </span>
               <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 14, fontWeight: 700, color: '#e8e8f0', marginBottom: 3 }}>Help me find an idea</div>
+                <div style={{ fontSize: 14, fontWeight: 700, color: '#e8e8f0', marginBottom: 3 }}>
+                  {loading === 'questionnaire' ? 'Starting...' : 'Help me find an idea'}
+                </div>
                 <div style={{ fontSize: 11, color: 'rgba(232,232,240,0.42)' }}>
                   8 adaptive questions · all skippable · 5 unique ideas generated
                 </div>
               </div>
               <span style={{ color: '#63d9ff', fontSize: 18 }}>→</span>
-            </Link>
+            </button>
 
-            {/* Card 2 — forge accent */}
+            {/* Card 2 — existing idea */}
             <Link
               to="/projects/new"
               className="card fa"
@@ -86,6 +126,7 @@ export default function IdeationPage() {
                 padding: '18px 22px',
                 textDecoration: 'none',
                 cursor: 'pointer',
+                opacity: loading !== null ? 0.5 : 1,
               }}
             >
               <span style={{ fontSize: 26, flexShrink: 0 }}>✍️</span>
@@ -98,29 +139,38 @@ export default function IdeationPage() {
               <span style={{ color: '#63d9ff', fontSize: 18 }}>→</span>
             </Link>
 
-            {/* Card 3 — ember accent */}
-            <Link
-              to="/ideate/ideas/surprise"
-              className="card ea"
+            {/* Card 3 — surprise */}
+            <button
               id="ideation-surprise"
+              className="card ea"
+              onClick={handleSurprise}
+              disabled={loading !== null}
               style={{
                 display: 'flex',
                 alignItems: 'center',
                 gap: 14,
                 padding: '18px 22px',
-                textDecoration: 'none',
-                cursor: 'pointer',
+                cursor: loading !== null ? 'not-allowed' : 'pointer',
+                width: '100%',
+                textAlign: 'left',
+                background: 'none',
+                border: 'none',
+                opacity: loading !== null && loading !== 'surprise' ? 0.5 : 1,
               }}
             >
-              <span style={{ fontSize: 26, flexShrink: 0 }}>🎲</span>
+              <span style={{ fontSize: 26, flexShrink: 0 }}>
+                {loading === 'surprise' ? '⏳' : '🎲'}
+              </span>
               <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 14, fontWeight: 700, color: '#e8e8f0', marginBottom: 3 }}>Surprise me</div>
+                <div style={{ fontSize: 14, fontWeight: 700, color: '#e8e8f0', marginBottom: 3 }}>
+                  {loading === 'surprise' ? 'Generating ideas...' : 'Surprise me'}
+                </div>
                 <div style={{ fontSize: 11, color: 'rgba(232,232,240,0.42)' }}>
                   Zero input — AI generates from market signals instantly
                 </div>
               </div>
               <span style={{ color: '#63d9ff', fontSize: 18 }}>→</span>
-            </Link>
+            </button>
           </div>
         </div>
       </div>

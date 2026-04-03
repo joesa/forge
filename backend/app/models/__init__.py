@@ -21,6 +21,8 @@ from app.models.preview_share import PreviewShare
 from app.models.hot_fix_record import HotFixRecord
 from app.models.performance_report import PerformanceReport
 from app.models.coherence_report import CoherenceReport
+from app.models.accessibility_report import AccessibilityReport
+from app.models.seed_data_record import SeedDataRecord
 
 __all__ = [
     "User",
@@ -41,4 +43,6 @@ __all__ = [
     "HotFixRecord",
     "PerformanceReport",
     "CoherenceReport",
+    "AccessibilityReport",
+    "SeedDataRecord",
 ]

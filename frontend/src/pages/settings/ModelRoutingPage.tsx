@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import AppShell from '@/components/layout/AppShell'
 import SettingsLayout from '@/components/layout/SettingsLayout'
+import { useUpdateModelRouting } from '@/hooks/queries/useSettings'
+import { useToast } from '@/components/shared/Toast'
 
 interface RouteRow {
   stage: string
@@ -28,6 +30,18 @@ const models: Record<string, string[]> = {
 
 export default function ModelRoutingPage() {
   const [routes, setRoutes] = useState(initialRoutes)
+  const updateMutation = useUpdateModelRouting()
+  const toast = useToast()
+
+  const handleSave = () => {
+    updateMutation.mutate(
+      routes.map((r) => ({ stage: r.stage, provider: r.provider, model: r.model })),
+      {
+        onSuccess: () => toast.success('Model routing saved'),
+        onError: () => toast.error('Failed to save routing'),
+      },
+    )
+  }
 
   const updateRoute = (index: number, field: keyof RouteRow, value: string) => {
     setRoutes((prev) =>
@@ -144,7 +158,14 @@ export default function ModelRoutingPage() {
             </div>
           </div>
 
-          <button className="btn btn-primary" id="save-routing">Save Routing</button>
+          <button
+            className="btn btn-primary"
+            id="save-routing"
+            onClick={handleSave}
+            disabled={updateMutation.isPending}
+          >
+            {updateMutation.isPending ? 'Saving...' : 'Save Routing'}
+          </button>
         </div>
       </SettingsLayout>
     </AppShell>

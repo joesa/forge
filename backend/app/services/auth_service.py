@@ -77,7 +77,7 @@ async def register_user(
     # Step 1 — create auth identity in Nhost
     async with httpx.AsyncClient(timeout=_NHOST_TIMEOUT) as client:
         resp = await client.post(
-            _nhost_url("/v1/signup/email-password"),
+            _nhost_url("/signup/email-password"),
             json=payload,
             headers=_admin_headers(),
         )
@@ -178,7 +178,7 @@ async def login_user(email: str, password: str) -> dict:
 
     async with httpx.AsyncClient(timeout=_NHOST_TIMEOUT) as client:
         resp = await client.post(
-            _nhost_url("/v1/signin/email-password"),
+            _nhost_url("/signin/email-password"),
             json=payload,
             headers={"Content-Type": "application/json"},
         )
@@ -209,7 +209,7 @@ async def refresh_tokens(refresh_token: str) -> dict:
 
     async with httpx.AsyncClient(timeout=_NHOST_TIMEOUT) as client:
         resp = await client.post(
-            _nhost_url("/v1/token"),
+            _nhost_url("/token"),
             json=payload,
             headers={"Content-Type": "application/json"},
         )
@@ -241,7 +241,7 @@ async def logout_user(access_token: str) -> None:
     """Sign out via Nhost Auth (invalidates the refresh token family)."""
     async with httpx.AsyncClient(timeout=_NHOST_TIMEOUT) as client:
         resp = await client.post(
-            _nhost_url("/v1/signout"),
+            _nhost_url("/signout"),
             headers={
                 "Content-Type": "application/json",
                 "Authorization": f"Bearer {access_token}",
@@ -263,7 +263,7 @@ async def forgot_password(email: str) -> None:
     """
     async with httpx.AsyncClient(timeout=_NHOST_TIMEOUT) as client:
         resp = await client.post(
-            _nhost_url("/v1/user/password/reset"),
+            _nhost_url("/user/password/reset"),
             json={"email": email},
             headers={"Content-Type": "application/json"},
         )
@@ -279,7 +279,7 @@ async def reset_password(token: str, new_password: str) -> None:
 
     async with httpx.AsyncClient(timeout=_NHOST_TIMEOUT) as client:
         resp = await client.post(
-            _nhost_url("/v1/user/password"),
+            _nhost_url("/user/password"),
             json=payload,
             headers={"Content-Type": "application/json"},
         )

@@ -84,6 +84,150 @@ def _extract_user_id(request: Request) -> uuid.UUID:
 # ══════════════════════════════════════════════════════════════════════
 
 
+@sandbox_router.post("", response_model=None)
+async def create_sandbox(
+    request: Request,
+    write_session: AsyncSession = Depends(get_write_session),
+) -> JSONResponse:
+    """Claim a sandbox from the pre-warmed pool."""
+    try:
+        user_id = _extract_user_id(request)
+    except ValueError as exc:
+        return JSONResponse(status_code=401, content={"detail": str(exc)})
+
+    try:
+        body = await request.json()
+        project_id = body.get("project_id")
+        if not project_id:
+            return JSONResponse(status_code=400, content={"detail": "project_id required"})
+        sandbox = await sandbox_service.create_sandbox(
+            project_id=project_id,
+            user_id=str(user_id),
+            session=write_session,
+        )
+        return JSONResponse(status_code=201, content={
+            "id": str(sandbox.id),
+            "status": sandbox.status.value if hasattr(sandbox.status, "value") else str(sandbox.status),
+            "vm_url": sandbox.vm_url,
+        })
+    except Exception as exc:
+        logger.error("create_sandbox_failed", error=str(exc))
+        return JSONResponse(status_code=500, content={"detail": "Failed to create sandbox"})
+
+
+@sandbox_router.post("/{sandbox_id}/start")
+async def start_sandbox(
+    sandbox_id: uuid.UUID,
+    request: Request,
+    write_session: AsyncSession = Depends(get_write_session),
+) -> JSONResponse:
+    """Start a sandbox."""
+    try:
+        user_id = _extract_user_id(request)
+    except ValueError as exc:
+        return JSONResponse(status_code=401, content={"detail": str(exc)})
+
+    try:
+        sandbox = await sandbox_service.get_sandbox(str(sandbox_id), str(user_id), write_session)
+        return JSONResponse(content={"id": str(sandbox.id), "status": "assigned"})
+    except LookupError as exc:
+        return JSONResponse(status_code=404, content={"detail": str(exc)})
+    except Exception as exc:
+        logger.error("start_sandbox_failed", error=str(exc))
+        return JSONResponse(status_code=500, content={"detail": "Failed to start sandbox"})
+
+
+@sandbox_router.post("/{sandbox_id}/stop")
+async def stop_sandbox(
+    sandbox_id: uuid.UUID,
+    request: Request,
+    write_session: AsyncSession = Depends(get_write_session),
+) -> JSONResponse:
+    """Stop a running sandbox."""
+    try:
+        user_id = _extract_user_id(request)
+    except ValueError as exc:
+        return JSONResponse(status_code=401, content={"detail": str(exc)})
+
+    try:
+        await sandbox_service.stop_sandbox(str(sandbox_id), str(user_id), write_session)
+        return JSONResponse(content={"success": True})
+    except LookupError as exc:
+        return JSONResponse(status_code=404, content={"detail": str(exc)})
+    except Exception as exc:
+        logger.error("stop_sandbox_failed", error=str(exc))
+        return JSONResponse(status_code=500, content={"detail": "Failed to stop sandbox"})
+
+
+@sandbox_router.delete("/{sandbox_id}")
+async def destroy_sandbox(
+    sandbox_id: uuid.UUID,
+    request: Request,
+    write_session: AsyncSession = Depends(get_write_session),
+) -> JSONResponse:
+    """Destroy a sandbox and release resources."""
+    try:
+        user_id = _extract_user_id(request)
+    except ValueError as exc:
+        return JSONResponse(status_code=401, content={"detail": str(exc)})
+
+    try:
+        await sandbox_service.destroy_sandbox(str(sandbox_id), str(user_id), write_session)
+        return JSONResponse(content={"success": True})
+    except LookupError as exc:
+        return JSONResponse(status_code=404, content={"detail": str(exc)})
+    except Exception as exc:
+        logger.error("destroy_sandbox_failed", error=str(exc))
+        return JSONResponse(status_code=500, content={"detail": "Failed to destroy sandbox"})
+
+
+@sandbox_router.post("/{sandbox_id}/exec")
+async def exec_command(
+    sandbox_id: uuid.UUID,
+    request: Request,
+    write_session: AsyncSession = Depends(get_write_session),
+) -> JSONResponse:
+    """Execute a command in the sandbox."""
+    try:
+        user_id = _extract_user_id(request)
+    except ValueError as exc:
+        return JSONResponse(status_code=401, content={"detail": str(exc)})
+
+    try:
+        body = await request.json()
+        command = body.get("command", "")
+        output = await sandbox_service.execute_command(
+            str(sandbox_id), str(user_id), command, write_session,
+        )
+        return JSONResponse(content={"output": output})
+    except LookupError as exc:
+        return JSONResponse(status_code=404, content={"detail": str(exc)})
+    except Exception as exc:
+        logger.error("exec_command_failed", error=str(exc))
+        return JSONResponse(status_code=500, content={"detail": "Failed to execute command"})
+
+
+@sandbox_router.websocket("/{sandbox_id}/terminal")
+async def ws_terminal(
+    websocket: WebSocket,
+    sandbox_id: uuid.UUID,
+) -> None:
+    """WebSocket terminal for interactive sandbox shell."""
+    await websocket.accept()
+    logger.info("terminal_ws_connected", sandbox_id=str(sandbox_id))
+
+    try:
+        while True:
+            data = await websocket.receive_text()
+            # Echo for now — will be replaced with real sandbox terminal I/O
+            await websocket.send_json({
+                "type": "output",
+                "data": f"$ {data}\n",
+            })
+    except WebSocketDisconnect:
+        logger.info("terminal_ws_disconnected", sandbox_id=str(sandbox_id))
+
+
 @sandbox_router.get(
     "/{sandbox_id}/preview-url", response_model=PreviewURLResult
 )

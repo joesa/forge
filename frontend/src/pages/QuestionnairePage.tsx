@@ -1,7 +1,8 @@
 import { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { useNavigate, useParams } from 'react-router-dom'
 import TopNav from '@/components/layout/TopNav'
 import ProgressPills from '@/components/shared/ProgressPills'
+import { useCompleteQuestionnaire } from '@/hooks/queries/useIdeation'
 
 interface Question {
   id: number
@@ -27,11 +28,14 @@ const questions: Question[] = [
 ]
 
 export default function QuestionnairePage() {
+  const { id: sessionId = '' } = useParams<{ id: string }>()
   const [currentQ, setCurrentQ] = useState(0)
   const [answers, setAnswers] = useState<Record<number, string | string[] | number>>({})
   const [sliderVal, setSliderVal] = useState(5)
   const [textVal, setTextVal] = useState('')
+  const [completing, setCompleting] = useState(false)
   const navigate = useNavigate()
+  const completeQuestionnaire = useCompleteQuestionnaire(sessionId)
 
   const question = questions[currentQ]
   const selectedChips = (answers[question.id] as string[] | undefined) ?? []
@@ -48,6 +52,23 @@ export default function QuestionnairePage() {
     setAnswers({ ...answers, [question.id]: label })
   }
 
+  const finishQuestionnaire = () => {
+    setCompleting(true)
+    if (sessionId && sessionId !== 'new') {
+      completeQuestionnaire.mutate(undefined, {
+        onSuccess: (data: { session_id: string }) => {
+          navigate(`/ideate/ideas/${data.session_id || sessionId}`)
+        },
+        onError: () => {
+          // Fall back to session ID from URL
+          navigate(`/ideate/ideas/${sessionId}`)
+        },
+      })
+    } else {
+      navigate('/ideate')
+    }
+  }
+
   const goNext = () => {
     if (question.type === 'slider') {
       setAnswers({ ...answers, [question.id]: sliderVal })
@@ -60,7 +81,7 @@ export default function QuestionnairePage() {
       setSliderVal(5)
       setTextVal('')
     } else {
-      navigate('/ideate/ideas/session-1')
+      finishQuestionnaire()
     }
   }
 
@@ -82,13 +103,14 @@ export default function QuestionnairePage() {
               <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: 'rgba(232,232,240,0.35)' }}>
                 Question {currentQ + 1} of {questions.length}
               </span>
-              <Link
-                to="/ideate/ideas/session-1"
+              <button
                 className="btn btn-sm"
-                style={{ color: '#ff6b35', border: '1px solid rgba(255,107,53,0.22)', background: 'transparent', textDecoration: 'none' }}
+                onClick={finishQuestionnaire}
+                disabled={completing}
+                style={{ color: '#ff6b35', border: '1px solid rgba(255,107,53,0.22)', background: 'transparent' }}
               >
-                Skip All →
-              </Link>
+                {completing ? 'Generating...' : 'Skip All →'}
+              </button>
             </>
           }
         />
@@ -241,8 +263,8 @@ export default function QuestionnairePage() {
                 >
                   Skip this →
                 </button>
-                <button className="btn btn-primary" onClick={goNext} id="question-next">
-                  {currentQ === questions.length - 1 ? 'Generate Ideas →' : 'Next →'}
+                <button className="btn btn-primary" onClick={goNext} id="question-next" disabled={completing}>
+                  {completing ? 'Generating...' : currentQ === questions.length - 1 ? 'Generate Ideas →' : 'Next →'}
                 </button>
               </div>
             </div>
