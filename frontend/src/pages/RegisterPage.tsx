@@ -1,7 +1,8 @@
 import { useState, useMemo } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import TopNav from '@/components/layout/TopNav'
 import HexLogo from '@/components/shared/HexLogo'
+import { useAuthStore } from '@/stores/authStore'
 
 function getStrength(pw: string): number {
   if (pw.length >= 16) return 4
@@ -17,8 +18,33 @@ export default function RegisterPage() {
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [terms, setTerms] = useState(false)
+  const navigate = useNavigate()
+  const setAuth = useAuthStore((s) => s.setAuth)
 
   const strength = useMemo(() => getStrength(password), [password])
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!name || !email || !password) return
+    /* Set fake auth state for demo / E2E flow */
+    setAuth(
+      {
+        id: crypto.randomUUID(),
+        email,
+        display_name: name,
+        avatar_url: null,
+        plan: 'free',
+        onboarding_completed: false,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      },
+      {
+        accessToken: 'demo-access-token',
+        refreshToken: 'demo-refresh-token',
+      },
+    )
+    navigate('/onboarding')
+  }
 
   return (
     <>
@@ -78,7 +104,7 @@ export default function RegisterPage() {
 
             {/* Form */}
             <form
-              onSubmit={(e) => e.preventDefault()}
+              onSubmit={handleSubmit}
               style={{ display: 'flex', flexDirection: 'column', gap: 13 }}
             >
               {/* Display Name */}

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import AppShell from '@/components/layout/AppShell'
 
 const cloudServices = ['Supabase', 'Stripe', 'OpenAI', 'Resend', 'Twilio', 'AWS S3', 'Cloudflare', 'Auth0', 'Pinecone', 'SendGrid']
@@ -11,6 +11,7 @@ export default function NewProjectPage() {
   const [aiEnhance, setAiEnhance] = useState(true)
   const [selectedServices, setSelectedServices] = useState<string[]>([])
   const [selectedFramework, setSelectedFramework] = useState('Next.js')
+  const navigate = useNavigate()
 
   const toggleService = (s: string) => {
     setSelectedServices((prev) =>
@@ -201,7 +202,12 @@ export default function NewProjectPage() {
             </div>
 
             {/* Submit */}
-            <button className="btn btn-primary" id="start-build-btn" style={{ width: '100%', height: 50, fontSize: 14 }}>
+            <button
+              className="btn btn-primary"
+              id="start-build-btn"
+              style={{ width: '100%', height: 50, fontSize: 14 }}
+              onClick={() => navigate(`/pipeline/${crypto.randomUUID().slice(0, 8)}`)}
+            >
               Start Building →
             </button>
             <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, textAlign: 'center', color: 'rgba(232,232,240,0.30)', marginTop: 9 }}>

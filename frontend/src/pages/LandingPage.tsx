@@ -108,7 +108,7 @@ export default function LandingPage() {
 
             {/* CTA row */}
             <div style={{ display: 'flex', gap: 11, flexWrap: 'wrap' }}>
-              <Link to="/projects/new" className="btn btn-primary btn-lg" id="hero-cta-build">
+              <Link to="/register" className="btn btn-primary btn-lg" id="hero-cta-build">
                 Start Building →
               </Link>
               <Link to="/ideate" className="btn btn-ghost btn-lg" id="hero-cta-idea">

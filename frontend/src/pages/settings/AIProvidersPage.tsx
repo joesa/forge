@@ -18,6 +18,8 @@ const initialProviders: Provider[] = [
   { name: 'Mistral', logo: 'M', connected: false, isDefault: false },
   { name: 'Cohere', logo: 'C', connected: false, isDefault: false },
   { name: 'Groq', logo: 'Q', connected: false, isDefault: false },
+  { name: 'Perplexity', logo: 'P', connected: false, isDefault: false },
+  { name: 'Replicate', logo: 'R', connected: false, isDefault: false },
 ]
 
 export default function AIProvidersPage() {
@@ -35,7 +37,8 @@ export default function AIProvidersPage() {
   }
 
   const testConnection = () => {
-    if (apiKey.length > 10) {
+    /* Require a valid-looking key: at least 20 chars, starts with 'sk-' */
+    if (apiKey.length >= 20 && apiKey.startsWith('sk-')) {
       setConnectStatus('success')
     } else {
       setConnectStatus('error')
