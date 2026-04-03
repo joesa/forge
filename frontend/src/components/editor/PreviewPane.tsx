@@ -10,6 +10,7 @@ import { useAuthStore } from '@/stores/authStore'
 import { usePreview } from '@/hooks/usePreview'
 import PreviewToolbar from './PreviewToolbar'
 import AnnotationLayer from './AnnotationLayer'
+import SnapshotTimeline from './SnapshotTimeline'
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -392,104 +393,11 @@ export default function PreviewPane() {
       )}
 
       {/* ---- Snapshot Timeline (38px) ---- */}
-      <div
-        id="snapshot-timeline"
-        style={{
-          height: 38,
-          background: 'rgba(4,4,10,0.95)',
-          borderTop: '1px solid rgba(255,255,255,0.06)',
-          display: 'flex',
-          alignItems: 'center',
-          padding: '0 10px',
-          gap: 5,
-          flexShrink: 0,
-        }}
-      >
-        <span
-          style={{
-            fontFamily: "'JetBrains Mono', monospace",
-            fontSize: 7,
-            color: 'rgba(232,232,240,0.30)',
-            flexShrink: 0,
-          }}
-        >
-          BUILD
-        </span>
-
-        {/* Track */}
-        <div style={{ flex: 1, display: 'flex', alignItems: 'center' }}>
-          {Array.from({ length: 10 }, (_, i) => {
-            const snapshot = snapshots[i] ?? null
-            const isDone = snapshot !== null
-            const isSelected = currentSnapshot?.id === snapshot?.id
-
-            return (
-              <div key={i} style={{ display: 'flex', alignItems: 'center', flex: i < 9 ? 1 : undefined }}>
-                <div
-                  onClick={() => {
-                    if (snapshot) handleSelectSnapshot(snapshot)
-                  }}
-                  style={{
-                    width: 8,
-                    height: 8,
-                    borderRadius: '50%',
-                    background: isDone
-                      ? isSelected
-                        ? '#63d9ff'
-                        : '#3dffa0'
-                      : 'rgba(232,232,240,0.15)',
-                    flexShrink: 0,
-                    cursor: isDone ? 'pointer' : 'default',
-                    boxShadow: isSelected
-                      ? '0 0 6px rgba(99,217,255,0.5)'
-                      : 'none',
-                    transition: 'all 0.15s',
-                  }}
-                />
-                {i < 9 && (
-                  <div
-                    style={{
-                      flex: 1,
-                      height: 1,
-                      background: 'rgba(255,255,255,0.07)',
-                      minWidth: 4,
-                    }}
-                  />
-                )}
-              </div>
-            )
-          })}
-        </div>
-
-        {/* LIVE dot */}
-        <div
-          onClick={() => handleSelectSnapshot(null)}
-          style={{
-            width: 8,
-            height: 8,
-            borderRadius: '50%',
-            background: '#3dffa0',
-            animation: 'jade-pulse 2s ease-in-out infinite',
-            cursor: 'pointer',
-            marginLeft: 4,
-            flexShrink: 0,
-          }}
-        />
-        <span
-          style={{
-            fontFamily: "'JetBrains Mono', monospace",
-            fontSize: 7,
-            color: currentSnapshot ? 'rgba(232,232,240,0.30)' : '#3dffa0',
-            flexShrink: 0,
-            cursor: 'pointer',
-          }}
-          onClick={() => handleSelectSnapshot(null)}
-        >
-          {currentSnapshot
-            ? `After Agent ${currentSnapshot.agent_index}`
-            : '● LIVE'}
-        </span>
-      </div>
+      <SnapshotTimeline
+        snapshots={snapshots}
+        selectedSnapshot={currentSnapshot}
+        onSelectSnapshot={handleSelectSnapshot}
+      />
     </div>
   )
 }
