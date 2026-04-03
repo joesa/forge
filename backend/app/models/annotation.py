@@ -29,6 +29,7 @@ class Annotation(Base):
         Index("ix_annotations_project_id", "project_id"),
         Index("ix_annotations_user_id", "user_id"),
         Index("ix_annotations_build_id", "build_id"),
+        Index("ix_annotations_project_resolved", "project_id", "resolved"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(

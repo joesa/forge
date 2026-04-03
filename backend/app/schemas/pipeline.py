@@ -84,3 +84,30 @@ class PipelineStageResponse(BaseModel):
     pipeline_id: uuid.UUID
     stages: list[StageInfo]
     gate_results: dict[str, GateResultResponse] = Field(default_factory=dict)
+
+
+# ── Internal endpoint request schemas ────────────────────────────────
+
+
+class InternalPipelineExecuteRequest(BaseModel):
+    """POST /api/v1/internal/pipeline/execute body."""
+
+    pipeline_id: uuid.UUID
+    project_id: uuid.UUID
+    user_id: uuid.UUID
+    idea_spec: dict = Field(default_factory=dict)
+
+
+class InternalPipelineStatusUpdateRequest(BaseModel):
+    """PATCH /api/v1/internal/pipeline/{id}/status body."""
+
+    status: str = Field(min_length=1, max_length=64)
+    current_stage: int | None = Field(default=None, ge=0, le=10)
+    errors: list[str] = Field(default_factory=list)
+
+
+class InternalProjectStatusUpdateRequest(BaseModel):
+    """PATCH /api/v1/internal/projects/{id}/status body."""
+
+    status: str = Field(min_length=1, max_length=64)
+

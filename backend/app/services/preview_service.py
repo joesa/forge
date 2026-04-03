@@ -98,15 +98,45 @@ async def get_preview_url(
     )
 
 
+async def verify_sandbox_ownership(
+    sandbox_id: str,
+    user_id: str,
+    session: AsyncSession,
+) -> Sandbox:
+    """Verify user owns the sandbox. Raises LookupError if not."""
+    sandbox_uuid = uuid.UUID(sandbox_id)
+    user_uuid = uuid.UUID(user_id)
+
+    stmt = select(Sandbox).where(
+        Sandbox.id == sandbox_uuid,
+        Sandbox.user_id == user_uuid,
+    )
+    result = await session.execute(stmt)
+    sandbox = result.scalar_one_or_none()
+
+    if sandbox is None:
+        raise LookupError(f"Sandbox {sandbox_id} not found or access denied")
+
+    return sandbox
+
+
 # ── Health Check ─────────────────────────────────────────────────────
 
 
-async def check_preview_health(sandbox_id: str) -> HealthResult:
+async def check_preview_health(
+    sandbox_id: str,
+    user_id: str,
+    session: AsyncSession,
+) -> HealthResult:
     """
     Check sandbox dev server health via internal HTTP GET.
 
+    Verifies ownership first, then probes.
     Results cached in Redis for 10 seconds to avoid hammering the sandbox.
     """
+    # Verify ownership
+    await verify_sandbox_ownership(sandbox_id, user_id, session)
+
     cache_key = f"preview_health:{sandbox_id}"
 
     # Check cache first

@@ -218,6 +218,7 @@ class TestPreviewHealth:
     """Tests for preview_service.check_preview_health."""
 
     @pytest.mark.asyncio
+    @patch("app.services.preview_service.verify_sandbox_ownership")
     @patch("app.services.preview_service.get_cache")
     @patch("app.services.preview_service.set_cache")
     @patch("httpx.AsyncClient")
@@ -226,8 +227,10 @@ class TestPreviewHealth:
         mock_client_class: MagicMock,
         mock_set_cache: AsyncMock,
         mock_get_cache: AsyncMock,
+        mock_verify: AsyncMock,
     ) -> None:
         """Healthy sandbox returns healthy=True with latency."""
+        mock_verify.return_value = _make_sandbox()
         mock_get_cache.return_value = None  # No cache hit
 
         mock_resp = MagicMock()
@@ -238,17 +241,27 @@ class TestPreviewHealth:
         mock_client.__aexit__ = AsyncMock(return_value=None)
         mock_client_class.return_value = mock_client
 
-        result = await preview_service.check_preview_health(SANDBOX_ID)
+        mock_session = AsyncMock()
+        result = await preview_service.check_preview_health(
+            SANDBOX_ID, USER_A_ID, mock_session,
+        )
 
         assert isinstance(result, HealthResult)
         assert result.healthy is True
         assert result.latency_ms >= 0
         mock_set_cache.assert_called_once()
+        mock_verify.assert_called_once_with(SANDBOX_ID, USER_A_ID, mock_session)
 
     @pytest.mark.asyncio
+    @patch("app.services.preview_service.verify_sandbox_ownership")
     @patch("app.services.preview_service.get_cache")
-    async def test_cached_result(self, mock_get_cache: AsyncMock) -> None:
+    async def test_cached_result(
+        self,
+        mock_get_cache: AsyncMock,
+        mock_verify: AsyncMock,
+    ) -> None:
         """Should return cached result without making HTTP request."""
+        mock_verify.return_value = _make_sandbox()
         cached_data = json.dumps({
             "healthy": True,
             "latency_ms": 42,
@@ -258,12 +271,16 @@ class TestPreviewHealth:
         })
         mock_get_cache.return_value = cached_data
 
-        result = await preview_service.check_preview_health(SANDBOX_ID)
+        mock_session = AsyncMock()
+        result = await preview_service.check_preview_health(
+            SANDBOX_ID, USER_A_ID, mock_session,
+        )
 
         assert result.healthy is True
         assert result.latency_ms == 42
 
     @pytest.mark.asyncio
+    @patch("app.services.preview_service.verify_sandbox_ownership")
     @patch("app.services.preview_service.get_cache")
     @patch("app.services.preview_service.set_cache")
     @patch("httpx.AsyncClient")
@@ -272,8 +289,10 @@ class TestPreviewHealth:
         mock_client_class: MagicMock,
         mock_set_cache: AsyncMock,
         mock_get_cache: AsyncMock,
+        mock_verify: AsyncMock,
     ) -> None:
         """Unreachable sandbox returns healthy=False."""
+        mock_verify.return_value = _make_sandbox()
         mock_get_cache.return_value = None
 
         mock_client = AsyncMock()
@@ -282,7 +301,10 @@ class TestPreviewHealth:
         mock_client.__aexit__ = AsyncMock(return_value=None)
         mock_client_class.return_value = mock_client
 
-        result = await preview_service.check_preview_health(SANDBOX_ID)
+        mock_session = AsyncMock()
+        result = await preview_service.check_preview_health(
+            SANDBOX_ID, USER_A_ID, mock_session,
+        )
 
         assert result.healthy is False
 

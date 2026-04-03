@@ -121,18 +121,23 @@ async def get_preview_url(
 async def check_preview_health(
     sandbox_id: uuid.UUID,
     request: Request,
+    read_session: AsyncSession = Depends(get_read_session),
 ) -> HealthResult | JSONResponse:
     """Check the health of a sandbox preview server."""
     try:
-        _extract_user_id(request)
+        user_id = _extract_user_id(request)
     except ValueError as exc:
         return JSONResponse(status_code=401, content={"detail": str(exc)})
 
     try:
         result = await preview_service.check_preview_health(
             sandbox_id=str(sandbox_id),
+            user_id=str(user_id),
+            session=read_session,
         )
         return result
+    except LookupError as exc:
+        return JSONResponse(status_code=404, content={"detail": str(exc)})
     except Exception as exc:
         logger.error("check_preview_health_failed", error=str(exc))
         return JSONResponse(
@@ -148,14 +153,21 @@ async def take_screenshot(
     sandbox_id: uuid.UUID,
     body: ScreenshotRequest,
     request: Request,
+    read_session: AsyncSession = Depends(get_read_session),
 ) -> ScreenshotResult | JSONResponse:
     """Capture a screenshot of the sandbox preview."""
     try:
-        _extract_user_id(request)
+        user_id = _extract_user_id(request)
     except ValueError as exc:
         return JSONResponse(status_code=401, content={"detail": str(exc)})
 
     try:
+        # Verify ownership before allowing screenshot
+        await preview_service.verify_sandbox_ownership(
+            sandbox_id=str(sandbox_id),
+            user_id=str(user_id),
+            session=read_session,
+        )
         result = await preview_service.take_screenshot(
             sandbox_id=str(sandbox_id),
             route=body.route,
@@ -163,6 +175,8 @@ async def take_screenshot(
             height=body.height,
         )
         return result
+    except LookupError as exc:
+        return JSONResponse(status_code=404, content={"detail": str(exc)})
     except Exception as exc:
         logger.error("take_screenshot_failed", error=str(exc))
         return JSONResponse(

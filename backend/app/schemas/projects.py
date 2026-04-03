@@ -43,7 +43,7 @@ class FileSaveRequest(BaseModel):
     """PUT /api/v1/projects/{id}/files/content body."""
 
     path: str = Field(min_length=1, max_length=1024)
-    content: str
+    content: str = Field(max_length=10_485_760)  # 10 MB cap
 
 
 class FileRenameRequest(BaseModel):

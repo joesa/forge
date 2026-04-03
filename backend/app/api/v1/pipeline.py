@@ -31,6 +31,9 @@ from app.services import pipeline_service
 from app.schemas.pipeline import (
     GateResultResponse,
     IdeaSpecInput,
+    InternalPipelineExecuteRequest,
+    InternalPipelineStatusUpdateRequest,
+    InternalProjectStatusUpdateRequest,
     PipelineRunRequest,
     PipelineRunResponse,
     PipelineStageResponse,
@@ -397,7 +400,7 @@ internal_router = APIRouter(
 
 @internal_router.post("/pipeline/execute")
 async def internal_execute_pipeline(
-    request: Request,
+    body: InternalPipelineExecuteRequest,
     write_session: AsyncSession = Depends(get_write_session),
 ) -> JSONResponse:
     """Execute the LangGraph pipeline — called by Trigger.dev pipeline-run job.
@@ -408,11 +411,10 @@ async def internal_execute_pipeline(
     from app.agents.graph import pipeline_graph
     from app.agents.state import PipelineState
 
-    body = await request.json()
-    pipeline_id = body.get("pipeline_id", "")
-    project_id = body.get("project_id", "")
-    user_id = body.get("user_id", "")
-    idea_spec = body.get("idea_spec", {})
+    pipeline_id = str(body.pipeline_id)
+    project_id = str(body.project_id)
+    user_id = str(body.user_id)
+    idea_spec = body.idea_spec
 
     logger.info(
         "internal_pipeline_execute_start",
@@ -497,13 +499,12 @@ async def internal_execute_pipeline(
 @internal_router.patch("/pipeline/{pipeline_id}/status")
 async def internal_update_pipeline_status(
     pipeline_id: uuid.UUID,
-    request: Request,
+    body: InternalPipelineStatusUpdateRequest,
     write_session: AsyncSession = Depends(get_write_session),
 ) -> JSONResponse:
     """Update pipeline_runs status — called by Trigger.dev jobs."""
-    body = await request.json()
-    status_str = body.get("status", "")
-    current_stage = body.get("current_stage")
+    status_str = body.status
+    current_stage = body.current_stage
 
     try:
         status_enum = PipelineStatus(status_str)
@@ -529,7 +530,7 @@ async def internal_update_pipeline_status(
     await write_session.flush()
 
     # Update Redis cache if errors provided
-    errors = body.get("errors", [])
+    errors = body.errors
     if errors:
         cache_key = f"pipeline:{pipeline_id}:result"
         cached_raw = await get_cache(cache_key)
@@ -551,12 +552,11 @@ async def internal_update_pipeline_status(
 @internal_router.patch("/projects/{project_id}/status")
 async def internal_update_project_status(
     project_id: uuid.UUID,
-    request: Request,
+    body: InternalProjectStatusUpdateRequest,
     write_session: AsyncSession = Depends(get_write_session),
 ) -> JSONResponse:
     """Update project status — called by Trigger.dev jobs on completion."""
-    body = await request.json()
-    status_str = body.get("status", "")
+    status_str = body.status
 
     try:
         status_enum = ProjectStatus(status_str)
