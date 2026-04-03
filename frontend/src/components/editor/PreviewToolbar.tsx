@@ -60,8 +60,8 @@ export default function PreviewToolbar({ previewUrl, onRefresh }: PreviewToolbar
   const shareRef = useRef<HTMLDivElement>(null)
   const shareTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  /* ---- Console error count (demo) ---- */
-  const [errorCount] = useState(2)
+  /* ---- Console error count (from dev console via store) ---- */
+  const errorCount = useEditorStore((s) => s.devConsoleErrors)
 
   /* ---- History stacks for navigation ---- */
   const [historyBack, setHistoryBack] = useState<string[]>([])

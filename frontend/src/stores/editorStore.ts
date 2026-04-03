@@ -35,6 +35,7 @@ interface EditorState {
   previewVisible: boolean
   previewDevice: 'mobile' | 'tablet' | 'desktop'
   previewRoute: string
+  chatPanelOpen: boolean
 
   /* Annotations */
   annotationMode: boolean
@@ -43,6 +44,10 @@ interface EditorState {
   /* Snapshots */
   snapshots: BuildSnapshot[]
   selectedSnapshot: BuildSnapshot | null
+
+  /* Dev Console */
+  devConsoleErrors: number
+  pendingChatMessage: string | null
 
   /* Loading */
   loading: boolean
@@ -67,6 +72,8 @@ interface EditorActions {
   togglePreview: () => void
   setPreviewDevice: (device: 'mobile' | 'tablet' | 'desktop') => void
   setPreviewRoute: (route: string) => void
+  toggleChatPanel: () => void
+  setChatPanelOpen: (open: boolean) => void
 
   /* Annotations */
   toggleAnnotationMode: () => void
@@ -75,6 +82,11 @@ interface EditorActions {
   /* Snapshots */
   setSnapshots: (snapshots: BuildSnapshot[]) => void
   selectSnapshot: (snapshot: BuildSnapshot | null) => void
+
+  /* Dev Console */
+  setDevConsoleErrors: (count: number) => void
+  appendChatMessage: (content: string) => void
+  consumePendingChatMessage: () => string | null
 
   /* Reset */
   reset: () => void
@@ -92,10 +104,13 @@ const initialState: EditorState = {
   previewVisible: true,
   previewDevice: 'desktop',
   previewRoute: '/',
+  chatPanelOpen: true,
   annotationMode: false,
   annotations: [],
   snapshots: [],
   selectedSnapshot: null,
+  devConsoleErrors: 0,
+  pendingChatMessage: null,
   loading: false,
   savingFile: null,
 }
@@ -210,6 +225,8 @@ export const useEditorStore = create<EditorState & EditorActions>()((set, get) =
   togglePreview: () => set((s) => ({ previewVisible: !s.previewVisible })),
   setPreviewDevice: (device) => set({ previewDevice: device }),
   setPreviewRoute: (route) => set({ previewRoute: route }),
+  toggleChatPanel: () => set((s) => ({ chatPanelOpen: !s.chatPanelOpen })),
+  setChatPanelOpen: (open) => set({ chatPanelOpen: open }),
 
   /* ----- Annotations ----- */
   toggleAnnotationMode: () =>
@@ -219,6 +236,15 @@ export const useEditorStore = create<EditorState & EditorActions>()((set, get) =
   /* ----- Snapshots ----- */
   setSnapshots: (snapshots) => set({ snapshots }),
   selectSnapshot: (snapshot) => set({ selectedSnapshot: snapshot }),
+
+  /* ----- Dev Console ----- */
+  setDevConsoleErrors: (count) => set({ devConsoleErrors: count }),
+  appendChatMessage: (content) => set({ pendingChatMessage: content, chatPanelOpen: true }),
+  consumePendingChatMessage: () => {
+    const msg = get().pendingChatMessage
+    set({ pendingChatMessage: null })
+    return msg
+  },
 
   /* ----- Reset ----- */
   reset: () => set(initialState),

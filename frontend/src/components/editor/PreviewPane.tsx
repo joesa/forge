@@ -4,34 +4,14 @@
 /*  Renders: toolbar, iframe/snapshot body, dev console, timeline.     */
 /* ------------------------------------------------------------------ */
 
-import { useState, useCallback, useMemo, useEffect } from 'react'
+import { useCallback, useMemo, useEffect } from 'react'
 import { useEditorStore } from '@/stores/editorStore'
 import { useAuthStore } from '@/stores/authStore'
 import { usePreview } from '@/hooks/usePreview'
 import PreviewToolbar from './PreviewToolbar'
 import AnnotationLayer from './AnnotationLayer'
 import SnapshotTimeline from './SnapshotTimeline'
-
-/* ------------------------------------------------------------------ */
-/*  Types                                                              */
-/* ------------------------------------------------------------------ */
-
-interface ConsoleEntry {
-  time: string
-  type: 'log' | 'warn' | 'error'
-  msg: string
-}
-
-/* ------------------------------------------------------------------ */
-/*  Demo data                                                          */
-/* ------------------------------------------------------------------ */
-
-const demoConsoleLines: ConsoleEntry[] = [
-  { time: '14:32:01', type: 'log', msg: '[HMR] Updated modules: dashboard/page.tsx' },
-  { time: '14:31:58', type: 'log', msg: 'GET /api/stats 200 OK (12ms)' },
-  { time: '14:31:55', type: 'warn', msg: 'React: Missing key prop in ProjectCard list' },
-  { time: '14:31:42', type: 'log', msg: '[build] Compiled successfully (340ms)' },
-]
+import PreviewDevConsole from './PreviewDevConsole'
 
 /* ------------------------------------------------------------------ */
 /*  Shimmer skeleton                                                   */
@@ -124,10 +104,6 @@ export default function PreviewPane() {
     },
     [storeSelectSnapshot, hookSelectSnapshot],
   )
-
-  /* ---- Console state ---- */
-  const [consoleTab, setConsoleTab] = useState<'console' | 'network' | 'errors'>('console')
-  const [consoleExpanded, setConsoleExpanded] = useState(true)
 
   /* ---- Set auth cookie for iframe domain ---- */
   useEffect(() => {
@@ -272,125 +248,8 @@ export default function PreviewPane() {
         )}
       </div>
 
-      {/* ---- Dev Console (collapsible) ---- */}
-      {consoleExpanded && (
-        <div
-          id="dev-console"
-          style={{
-            background: 'rgba(4,4,10,0.97)',
-            borderTop: '1px solid rgba(255,255,255,0.06)',
-            flexShrink: 0,
-            maxHeight: 100,
-            overflow: 'hidden',
-          }}
-        >
-          {/* Console tab bar */}
-          <div
-            style={{
-              display: 'flex',
-              gap: 2,
-              padding: '6px 10px 0',
-              alignItems: 'center',
-            }}
-          >
-            {(['console', 'network', 'errors'] as const).map((tab) => (
-              <button
-                key={tab}
-                onClick={() => setConsoleTab(tab)}
-                style={{
-                  fontFamily: "'JetBrains Mono', monospace",
-                  fontSize: 9,
-                  cursor: 'pointer',
-                  padding: '2px 6px',
-                  borderRadius: 4,
-                  border:
-                    consoleTab === tab
-                      ? '1px solid rgba(99,217,255,0.25)'
-                      : '1px solid transparent',
-                  color: consoleTab === tab ? '#63d9ff' : 'rgba(232,232,240,0.35)',
-                  background:
-                    consoleTab === tab ? 'rgba(99,217,255,0.08)' : 'transparent',
-                  textTransform: 'capitalize',
-                }}
-              >
-                {tab}
-              </button>
-            ))}
-            <div style={{ flex: 1 }} />
-            <button
-              onClick={() => setConsoleExpanded(false)}
-              style={{
-                background: 'none',
-                border: 'none',
-                color: 'rgba(232,232,240,0.25)',
-                cursor: 'pointer',
-                fontSize: 9,
-                fontFamily: "'JetBrains Mono', monospace",
-              }}
-            >
-              ✕
-            </button>
-          </div>
-
-          {/* Console lines */}
-          <div
-            style={{
-              padding: '4px 10px',
-              fontFamily: "'JetBrains Mono', monospace",
-              fontSize: 9,
-              overflowY: 'auto',
-              maxHeight: 70,
-            }}
-          >
-            {demoConsoleLines.map((l, i) => (
-              <div key={i} style={{ display: 'flex', gap: 6, padding: '1px 0' }}>
-                <span style={{ color: 'rgba(232,232,240,0.16)', flexShrink: 0 }}>
-                  {l.time}
-                </span>
-                <span
-                  style={{
-                    color:
-                      l.type === 'warn'
-                        ? '#f5c842'
-                        : l.type === 'error'
-                          ? '#ff6b35'
-                          : 'rgba(232,232,240,0.45)',
-                  }}
-                >
-                  {l.msg}
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Console re-open button when collapsed */}
-      {!consoleExpanded && (
-        <div
-          style={{
-            borderTop: '1px solid rgba(255,255,255,0.06)',
-            flexShrink: 0,
-          }}
-        >
-          <button
-            onClick={() => setConsoleExpanded(true)}
-            style={{
-              width: '100%',
-              background: 'rgba(4,4,10,0.97)',
-              border: 'none',
-              padding: '3px 10px',
-              fontFamily: "'JetBrains Mono', monospace",
-              fontSize: 8,
-              color: 'rgba(232,232,240,0.30)',
-              cursor: 'pointer',
-              textAlign: 'left',
-            }}
-          >
-            ▸ Console
-          </button>
-        </div>
-      )}
+      {/* ---- Dev Console (collapsible, WebSocket-connected) ---- */}
+      <PreviewDevConsole sandboxId={sandboxId} projectId={projectId} />
 
       {/* ---- Snapshot Timeline (38px) ---- */}
       <SnapshotTimeline
