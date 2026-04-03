@@ -9,7 +9,7 @@ import { useEditorStore } from '@/stores/editorStore'
 import { useAuthStore } from '@/stores/authStore'
 import { usePreview } from '@/hooks/usePreview'
 import PreviewToolbar from './PreviewToolbar'
-import type { Annotation } from '@/types'
+import AnnotationLayer from './AnnotationLayer'
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -85,72 +85,14 @@ function PreviewSkeleton() {
   )
 }
 
-/* ------------------------------------------------------------------ */
-/*  Annotation dot overlay                                             */
-/* ------------------------------------------------------------------ */
-
-function AnnotationDot({ annotation }: { annotation: Annotation }) {
-  const [hovered, setHovered] = useState(false)
-
-  return (
-    <div
-      style={{
-        position: 'absolute',
-        left: `${annotation.x_pct}%`,
-        top: `${annotation.y_pct}%`,
-        transform: 'translate(-50%, -50%)',
-        zIndex: 10,
-        cursor: 'pointer',
-      }}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-    >
-      <div
-        style={{
-          width: hovered ? 16 : 12,
-          height: hovered ? 16 : 12,
-          borderRadius: '50%',
-          border: '2px solid #fff',
-          background: annotation.resolved ? '#3dffa0' : '#ff6b35',
-          opacity: annotation.resolved ? 0.5 : 1,
-          animation: annotation.resolved ? 'none' : 'pulse 1.8s ease-in-out infinite',
-          transition: 'width 0.15s, height 0.15s',
-        }}
-      />
-      {/* Tooltip on hover */}
-      {hovered && (
-        <div
-          style={{
-            position: 'absolute',
-            top: -36,
-            left: '50%',
-            transform: 'translateX(-50%)',
-            background: '#0d0d1f',
-            border: '1px solid rgba(255,255,255,0.12)',
-            borderRadius: 6,
-            padding: '4px 8px',
-            fontFamily: "'JetBrains Mono', monospace",
-            fontSize: 9,
-            color: '#e8e8f0',
-            whiteSpace: 'nowrap',
-            zIndex: 20,
-            boxShadow: '0 4px 16px rgba(0,0,0,0.4)',
-          }}
-        >
-          {annotation.comment.length > 40
-            ? annotation.comment.slice(0, 40) + '…'
-            : annotation.comment}
-        </div>
-      )}
-    </div>
-  )
-}
+/* AnnotationDot moved to AnnotationLayer component */
 
 /* ------------------------------------------------------------------ */
 /*  Main PreviewPane Component                                         */
 /* ------------------------------------------------------------------ */
 
 export default function PreviewPane() {
+  const projectId = useEditorStore((s) => s.projectId)
   const sandboxId = useEditorStore((s) => s.sandboxId)
   const previewRoute = useEditorStore((s) => s.previewRoute)
   const previewDevice = useEditorStore((s) => s.previewDevice)
@@ -201,34 +143,7 @@ export default function PreviewPane() {
     }
   }, [tokens, previewUrl])
 
-  /* ---- Add annotation on click when in annotation mode ---- */
-  const handlePreviewBodyClick = useCallback(
-    (e: React.MouseEvent<HTMLDivElement>) => {
-      if (!annotationMode) return
-
-      const rect = e.currentTarget.getBoundingClientRect()
-      const xPct = ((e.clientX - rect.left) / rect.width) * 100
-      const yPct = ((e.clientY - rect.top) / rect.height) * 100
-
-      // Store annotation coordinates — the actual creation API call
-      // would happen through the annotation system (built in 3.6)
-      const newAnnotation: Annotation = {
-        id: `temp-${Date.now()}`,
-        project_id: '',
-        user_id: '',
-        snapshot_id: null,
-        x_pct: xPct,
-        y_pct: yPct,
-        comment: 'New annotation',
-        resolved: false,
-        route: previewRoute,
-        created_at: new Date().toISOString(),
-      }
-
-      useEditorStore.getState().setAnnotations([...annotations, newAnnotation])
-    },
-    [annotationMode, annotations, previewRoute],
-  )
+  /* ---- Annotation click handling is now delegated to AnnotationLayer ---- */
 
   /* ---- Iframe src ---- */
   const iframeSrc = useMemo(() => {
@@ -255,6 +170,9 @@ export default function PreviewPane() {
     [annotations, previewRoute],
   )
 
+  /* Suppress unused variable warning — routeAnnotations used by AnnotationLayer */
+  void routeAnnotations
+
   return (
     <div
       id="preview-pane"
@@ -276,7 +194,6 @@ export default function PreviewPane() {
       {/* ---- Preview Body (flex: 1) ---- */}
       <div
         id="preview-body"
-        onClick={handlePreviewBodyClick}
         style={{
           flex: 1,
           background: '#04040a',
@@ -285,7 +202,6 @@ export default function PreviewPane() {
           justifyContent: 'center',
           position: 'relative',
           overflow: 'hidden',
-          cursor: annotationMode ? 'crosshair' : 'default',
           opacity: hmrFlash ? 0.6 : 1,
           transition: 'opacity 100ms ease',
         }}
@@ -344,19 +260,14 @@ export default function PreviewPane() {
           </div>
         )}
 
-        {/* Annotation dots overlay */}
-        {!currentSnapshot && routeAnnotations.length > 0 && (
-          <div
-            style={{
-              position: 'absolute',
-              inset: 0,
-              pointerEvents: annotationMode ? 'none' : 'auto',
-            }}
-          >
-            {routeAnnotations.map((a) => (
-              <AnnotationDot key={a.id} annotation={a} />
-            ))}
-          </div>
+        {/* Annotation Layer — handles dots, click-to-annotate, popovers */}
+        {!currentSnapshot && projectId && sandboxId && (
+          <AnnotationLayer
+            projectId={projectId}
+            sandboxId={sandboxId}
+            annotations={annotations.filter((a) => !a.route || a.route === previewRoute)}
+            annotationMode={annotationMode}
+          />
         )}
       </div>
 

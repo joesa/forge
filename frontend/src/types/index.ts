@@ -131,6 +131,7 @@ export interface Annotation {
   snapshot_id: string | null
   x_pct: number
   y_pct: number
+  css_selector: string | null
   comment: string
   resolved: boolean
   route: string | null
