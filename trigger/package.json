@@ -1,0 +1,20 @@
+{
+  "name": "@forge/trigger",
+  "version": "1.0.0",
+  "private": true,
+  "description": "FORGE durable background jobs powered by Trigger.dev v3",
+  "type": "module",
+  "scripts": {
+    "dev": "npx trigger.dev@latest dev",
+    "deploy": "npx trigger.dev@latest deploy",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@trigger.dev/sdk": "^3.3.0",
+    "ioredis": "^5.4.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.4.5"
+  }
+}

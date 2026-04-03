@@ -51,6 +51,10 @@ class Settings(BaseSettings):
     TRIGGER_API_KEY: str = ""
     TRIGGER_PROJECT_ID: str = ""
 
+    # ── Internal API (service-to-service auth for Trigger.dev) ──────
+    FORGE_INTERNAL_SECRET: str = ""
+    FORGE_INTERNAL_API_URL: str = "http://localhost:8000"
+
     # ── Pinecone ─────────────────────────────────────────────────────
     PINECONE_API_KEY: str = ""
     PINECONE_INDEX_NAME: str = "forge-build-cache"

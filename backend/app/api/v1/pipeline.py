@@ -11,20 +11,23 @@ Endpoints:
 from __future__ import annotations
 
 import asyncio
+import datetime
 import json
 import uuid
 
 import structlog
-from fastapi import APIRouter, Depends, Request, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, Header, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
+from sqlalchemy import update as sa_update
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.agents.graph import pipeline_graph
-from app.agents.state import PipelineState
+from app.config import settings
 from app.core.database import get_read_session, get_write_session
 from app.core.redis import get_redis, publish_event, set_cache, get_cache
 from app.models.pipeline import PipelineRun, PipelineStatus
+from app.models.project import Project, ProjectStatus
+from app.services import pipeline_service
 from app.schemas.pipeline import (
     GateResultResponse,
     IdeaSpecInput,
@@ -73,77 +76,24 @@ def _extract_user_id(request: Request) -> uuid.UUID:
     return uuid.UUID(sub)
 
 
-async def _run_pipeline_background(
-    pipeline_id: uuid.UUID,
-    project_id: uuid.UUID,
-    user_id: uuid.UUID,
-    idea_spec: dict[str, object],
-) -> None:
-    """Execute the pipeline graph in the background.
+def _verify_internal_secret(x_internal_secret: str = Header(default="")) -> None:
+    """Verify X-Internal-Secret header for service-to-service calls.
 
-    In production this would be submitted to Trigger.dev.
-    For now we run it as an asyncio background task.
+    In dev mode (FORGE_INTERNAL_SECRET not set), validation is skipped.
+    In production, the header must match the configured secret.
+    Raises 403 if the secret is configured but doesn't match.
     """
-    try:
-        initial_state: PipelineState = {
-            "pipeline_id": str(pipeline_id),
-            "project_id": str(project_id),
-            "user_id": str(user_id),
-            "current_stage": 0,
-            "idea_spec": idea_spec,
-            "csuite_outputs": {},
-            "comprehensive_plan": {},
-            "spec_outputs": {},
-            "build_manifest": {},
-            "generated_files": {},
-            "gate_results": {},
-            "errors": [],
-            "sandbox_id": None,
-        }
-
-        # Run the compiled LangGraph
-        final_state = await pipeline_graph.ainvoke(initial_state)
-
-        # Persist final status to Redis cache for quick lookups
-        cache_key = f"pipeline:{pipeline_id}:result"
-        await set_cache(cache_key, json.dumps({
-            "status": "completed" if not final_state.get("errors") else "failed",
-            "current_stage": final_state.get("current_stage", 0),
-            "gate_results": final_state.get("gate_results", {}),
-            "errors": final_state.get("errors", []),
-            "generated_files_count": len(final_state.get("generated_files", {})),
-        }), ttl_seconds=3600)
-
-        # Publish completion event
-        status = "completed" if not final_state.get("errors") else "failed"
-        channel = f"pipeline:{pipeline_id}"
-        await publish_event(channel, {
-            "pipeline_id": str(pipeline_id),
-            "stage": final_state.get("current_stage", 0),
-            "status": status,
-            "detail": "pipeline finished",
-        })
-
-        logger.info(
-            "pipeline_completed",
-            pipeline_id=str(pipeline_id),
-            status=status,
-            stages_completed=final_state.get("current_stage", 0),
+    expected = settings.FORGE_INTERNAL_SECRET
+    # If no secret configured (dev mode), skip validation
+    if not expected:
+        return
+    # Secret is configured — must match
+    if x_internal_secret != expected:
+        from fastapi import HTTPException
+        raise HTTPException(
+            status_code=403,
+            detail="Invalid or missing internal secret",
         )
-
-    except Exception as exc:
-        logger.error(
-            "pipeline_background_error",
-            pipeline_id=str(pipeline_id),
-            error=str(exc),
-        )
-        channel = f"pipeline:{pipeline_id}"
-        await publish_event(channel, {
-            "pipeline_id": str(pipeline_id),
-            "stage": 0,
-            "status": "error",
-            "detail": str(exc),
-        })
 
 
 # ── POST /run ────────────────────────────────────────────────────────
@@ -186,16 +136,30 @@ async def run_pipeline(
             content={"detail": "Failed to create pipeline run"},
         )
 
-    # Launch background task (simulates Trigger.dev submission)
+    # Submit to Trigger.dev (or asyncio fallback in dev)
     idea_spec_dict = body.idea_spec.model_dump()
-    asyncio.create_task(
-        _run_pipeline_background(
+    try:
+        run_id = await pipeline_service.start_pipeline(
             pipeline_id=pipeline_id,
             project_id=body.project_id,
             user_id=user_id,
             idea_spec=idea_spec_dict,
         )
-    )
+        logger.info(
+            "pipeline_submitted",
+            pipeline_id=str(pipeline_id),
+            trigger_run_id=run_id,
+        )
+    except Exception as exc:
+        logger.error(
+            "pipeline_submission_failed",
+            pipeline_id=str(pipeline_id),
+            error=str(exc),
+        )
+        return JSONResponse(
+            status_code=500,
+            content={"detail": "Failed to submit pipeline for execution"},
+        )
 
     return PipelineRunResponse(
         pipeline_id=pipeline_id,
@@ -417,3 +381,196 @@ async def stream_pipeline(
             await pubsub.close()
         except Exception:
             pass
+
+
+# ══════════════════════════════════════════════════════════════════════
+# INTERNAL ENDPOINTS — Called by Trigger.dev jobs (not user-facing)
+# Protected by X-Internal-Secret header
+# ══════════════════════════════════════════════════════════════════════
+
+internal_router = APIRouter(
+    prefix="/api/v1/internal",
+    tags=["internal"],
+    dependencies=[Depends(_verify_internal_secret)],
+)
+
+
+@internal_router.post("/pipeline/execute")
+async def internal_execute_pipeline(
+    request: Request,
+    write_session: AsyncSession = Depends(get_write_session),
+) -> JSONResponse:
+    """Execute the LangGraph pipeline — called by Trigger.dev pipeline-run job.
+
+    This is the heavy-lifting endpoint that runs all 6 pipeline stages.
+    Not exposed to users. Auth via X-Internal-Secret.
+    """
+    from app.agents.graph import pipeline_graph
+    from app.agents.state import PipelineState
+
+    body = await request.json()
+    pipeline_id = body.get("pipeline_id", "")
+    project_id = body.get("project_id", "")
+    user_id = body.get("user_id", "")
+    idea_spec = body.get("idea_spec", {})
+
+    logger.info(
+        "internal_pipeline_execute_start",
+        pipeline_id=pipeline_id,
+    )
+
+    try:
+        # Update status to running
+        await write_session.execute(
+            sa_update(PipelineRun)
+            .where(PipelineRun.id == uuid.UUID(pipeline_id))
+            .values(
+                status=PipelineStatus.running,
+                started_at=datetime.datetime.now(datetime.timezone.utc),
+            )
+        )
+        await write_session.flush()
+
+        # Build initial state and run the graph
+        initial_state: PipelineState = {
+            "pipeline_id": pipeline_id,
+            "project_id": project_id,
+            "user_id": user_id,
+            "current_stage": 0,
+            "idea_spec": idea_spec,
+            "csuite_outputs": {},
+            "comprehensive_plan": {},
+            "spec_outputs": {},
+            "build_manifest": {},
+            "generated_files": {},
+            "gate_results": {},
+            "errors": [],
+            "sandbox_id": None,
+        }
+
+        final_state = await pipeline_graph.ainvoke(initial_state)
+
+        # Persist to Redis cache
+        cache_key = f"pipeline:{pipeline_id}:result"
+        await set_cache(cache_key, json.dumps({
+            "status": "completed" if not final_state.get("errors") else "failed",
+            "current_stage": final_state.get("current_stage", 0),
+            "gate_results": final_state.get("gate_results", {}),
+            "errors": final_state.get("errors", []),
+            "generated_files_count": len(final_state.get("generated_files", {})),
+        }), ttl_seconds=3600)
+
+        # Update pipeline run status in DB
+        has_errors = bool(final_state.get("errors"))
+        final_status = PipelineStatus.failed if has_errors else PipelineStatus.completed
+        await write_session.execute(
+            sa_update(PipelineRun)
+            .where(PipelineRun.id == uuid.UUID(pipeline_id))
+            .values(
+                status=final_status,
+                current_stage=final_state.get("current_stage", 0),
+                completed_at=datetime.datetime.now(datetime.timezone.utc),
+            )
+        )
+        await write_session.flush()
+
+        return JSONResponse(content={
+            "status": "completed" if not has_errors else "failed",
+            "current_stage": final_state.get("current_stage", 0),
+            "gate_results": final_state.get("gate_results", {}),
+            "errors": final_state.get("errors", []),
+            "generated_files_count": len(final_state.get("generated_files", {})),
+        })
+
+    except Exception as exc:
+        logger.error(
+            "internal_pipeline_execute_error",
+            pipeline_id=pipeline_id,
+            error=str(exc),
+        )
+        return JSONResponse(
+            status_code=500,
+            content={"detail": str(exc)},
+        )
+
+
+@internal_router.patch("/pipeline/{pipeline_id}/status")
+async def internal_update_pipeline_status(
+    pipeline_id: uuid.UUID,
+    request: Request,
+    write_session: AsyncSession = Depends(get_write_session),
+) -> JSONResponse:
+    """Update pipeline_runs status — called by Trigger.dev jobs."""
+    body = await request.json()
+    status_str = body.get("status", "")
+    current_stage = body.get("current_stage")
+
+    try:
+        status_enum = PipelineStatus(status_str)
+    except ValueError:
+        return JSONResponse(
+            status_code=400,
+            content={"detail": f"Invalid status: {status_str}"},
+        )
+
+    values: dict[str, object] = {"status": status_enum}
+    if current_stage is not None:
+        values["current_stage"] = int(current_stage)
+    if status_str == "running":
+        values["started_at"] = datetime.datetime.now(datetime.timezone.utc)
+    if status_str in ("completed", "failed"):
+        values["completed_at"] = datetime.datetime.now(datetime.timezone.utc)
+
+    await write_session.execute(
+        sa_update(PipelineRun)
+        .where(PipelineRun.id == pipeline_id)
+        .values(**values)
+    )
+    await write_session.flush()
+
+    # Update Redis cache if errors provided
+    errors = body.get("errors", [])
+    if errors:
+        cache_key = f"pipeline:{pipeline_id}:result"
+        cached_raw = await get_cache(cache_key)
+        cached_data: dict[str, object] = {}
+        if cached_raw:
+            try:
+                cached_data = json.loads(cached_raw)
+            except (json.JSONDecodeError, TypeError):
+                pass
+        cached_data["status"] = status_str
+        cached_data["errors"] = errors
+        if current_stage is not None:
+            cached_data["current_stage"] = current_stage
+        await set_cache(cache_key, json.dumps(cached_data), ttl_seconds=3600)
+
+    return JSONResponse(content={"ok": True})
+
+
+@internal_router.patch("/projects/{project_id}/status")
+async def internal_update_project_status(
+    project_id: uuid.UUID,
+    request: Request,
+    write_session: AsyncSession = Depends(get_write_session),
+) -> JSONResponse:
+    """Update project status — called by Trigger.dev jobs on completion."""
+    body = await request.json()
+    status_str = body.get("status", "")
+
+    try:
+        status_enum = ProjectStatus(status_str)
+    except ValueError:
+        return JSONResponse(
+            status_code=400,
+            content={"detail": f"Invalid status: {status_str}"},
+        )
+
+    await write_session.execute(
+        sa_update(Project)
+        .where(Project.id == project_id)
+        .values(status=status_enum)
+    )
+    await write_session.flush()
+
+    return JSONResponse(content={"ok": True})

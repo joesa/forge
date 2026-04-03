@@ -64,4 +64,5 @@ Completed: Session 1.7c — Reliability Layer 7 (Wiremock external service simul
 Completed: Session 1.7d — Reliability Layer 8 (post-build verification: visual regression, SAST, perf, a11y, dead code, seeds)
 Completed: Session 1.7e — Reliability Layers 9, 10 (hotfix agent, rollback engine, canary deploy, migration safety, context window mgr, CSS validator, determinism enforcer, fallback cascade)
 Completed: Session 1.8p — Preview system backend (preview URL, health, screenshots, shares, snapshots, annotations, file sync, WebSocket console)
+Completed: Session 1.8t — Trigger.dev durable jobs (pipeline-run, build-run, idea-generation, sandbox-lifecycle, pool-replenish, internal API, pipeline service)
 Next: Session 1.8 — Frontend pages & components
