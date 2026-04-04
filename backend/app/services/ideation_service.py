@@ -86,23 +86,26 @@ QUESTIONS = [
 TOTAL_QUESTIONS = len(QUESTIONS)
 
 _IDEA_SYSTEM_PROMPT = """You are an expert product strategist and startup advisor.
-Generate exactly 5 innovative app ideas as a JSON array.
+Generate exactly 5 innovative app ideas and return them as a JSON object with this exact structure:
 
-Each idea must have these exact fields:
 {
-  "title": "Short catchy product name (2-4 words)",
-  "tagline": "One punchy sentence that sells the idea",
-  "problem": "The specific pain point this solves (1-2 sentences)",
-  "solution": "How the app solves it (1-2 sentences)",
-  "market": "TAM estimate (e.g. $4.2B)",
-  "revenue_model": "Subscription | Freemium | Usage-based | Marketplace",
-  "tech_stack": ["Framework1", "Framework2", "Database", "Service"],
-  "uniqueness": 7.5,
-  "complexity": 6,
-  "features": ["Key feature 1", "Key feature 2", "Key feature 3"]
+  "ideas": [
+    {
+      "title": "Short catchy product name (2-4 words)",
+      "tagline": "One punchy sentence that sells the idea",
+      "problem": "The specific pain point this solves (1-2 sentences)",
+      "solution": "How the app solves it (1-2 sentences)",
+      "market": "TAM estimate (e.g. $4.2B)",
+      "revenue_model": "Subscription | Freemium | Usage-based | Marketplace",
+      "tech_stack": ["Framework1", "Framework2", "Database", "Service"],
+      "uniqueness": 7.5,
+      "complexity": 6,
+      "features": ["Key feature 1", "Key feature 2", "Key feature 3"]
+    }
+  ]
 }
 
-Return ONLY the JSON array, no markdown, no explanation."""
+Return ONLY valid JSON with the "ideas" array. No markdown, no explanation."""
 
 
 # ── Questionnaire ────────────────────────────────────────────────────
@@ -283,6 +286,7 @@ async def select_idea(
     )
     write_session.add(pipeline_run)
     await write_session.flush()
+    await write_session.refresh(pipeline_run)
 
     logger.info(
         "idea_selected",
@@ -290,6 +294,30 @@ async def select_idea(
         project_id=str(project.id),
         pipeline_id=str(pipeline_run.id),
     )
+
+    # Build idea_spec from the selected idea and kick off the pipeline
+    features_raw = idea.features or {}
+    features_list: list[str] = features_raw.get("features", []) if isinstance(features_raw, dict) else []
+    idea_spec: dict[str, object] = {
+        "title": idea.title,
+        "description": idea.description or idea.title,
+        "features": features_list,
+        "framework": framework or "react_vite",
+        "target_audience": features_raw.get("market") if isinstance(features_raw, dict) else None,
+    }
+
+    from app.services import pipeline_service  # local import avoids circular
+    try:
+        await pipeline_service.start_pipeline(
+            pipeline_id=pipeline_run.id,
+            project_id=project.id,
+            user_id=uuid.UUID(user_id),
+            idea_spec=idea_spec,
+        )
+    except Exception:
+        logger.exception("pipeline_start_failed", pipeline_id=str(pipeline_run.id))
+        # Don't raise — the pipeline record exists; user can retry from the UI
+
     return project, pipeline_run
 
 
@@ -392,8 +420,21 @@ async def _generate_and_store_ideas(
         parsed = json.loads(raw)
         if isinstance(parsed, list):
             ideas_data = parsed
-        elif isinstance(parsed, dict) and "ideas" in parsed:
-            ideas_data = parsed["ideas"]
+        elif isinstance(parsed, dict):
+            # Try common wrapper keys first
+            for key in ("ideas", "result", "apps", "items", "data"):
+                if key in parsed and isinstance(parsed[key], list):
+                    ideas_data = parsed[key]
+                    break
+            # If still empty, maybe OpenAI returned a single idea object
+            if not ideas_data and "title" in parsed:
+                ideas_data = [parsed]
+            # Last resort: grab the first array value in the dict
+            if not ideas_data:
+                for v in parsed.values():
+                    if isinstance(v, list) and len(v) > 0:
+                        ideas_data = v
+                        break
     except Exception as exc:
         logger.warning("idea_generation_ai_failed", error=str(exc))
         ideas_data = _default_ideas()

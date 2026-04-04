@@ -282,7 +282,35 @@ async def _run_pipeline_background(
             "sandbox_id": None,
         }
 
-        final_state = await pipeline_graph.ainvoke(initial_state)
+        # Stream graph so we can update DB current_stage after each node
+        # completes — without this, the frontend always sees current_stage=0
+        # until the whole pipeline finishes.
+        final_state: dict = {}
+        last_stage = 0
+        async for snapshot in pipeline_graph.astream(
+            initial_state, stream_mode="values"
+        ):
+            final_state = snapshot
+            stage = int(snapshot.get("current_stage", 0))
+            if stage > last_stage:
+                last_stage = stage
+                # Update DB so frontend polls reflect real progress
+                try:
+                    async for session in get_write_session():
+                        await session.execute(
+                            sa_update(PipelineRun)
+                            .where(PipelineRun.id == pipeline_id)
+                            .values(current_stage=stage)
+                        )
+                        await session.commit()
+                        break
+                except Exception as stage_exc:
+                    logger.warning(
+                        "pipeline_stage_update_failed",
+                        pipeline_id=str(pipeline_id),
+                        stage=stage,
+                        error=str(stage_exc),
+                    )
 
         # Determine final status
         has_errors = bool(final_state.get("errors"))

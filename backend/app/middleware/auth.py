@@ -108,6 +108,14 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 "email": "dev@forge.local",
                 "displayName": "Dev User",
             }
+            # Mirror the real login flow: ensure the synthetic user
+            # exists in our DB (same as get_or_create_user_on_login).
+            from app.services.auth_service import get_or_create_user_on_login
+            await get_or_create_user_on_login(
+                nhost_user_id="00000000-0000-0000-0000-000000000001",
+                email="dev@forge.local",
+                display_name="Dev User",
+            )
             return await call_next(request)
 
         try:

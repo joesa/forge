@@ -14,7 +14,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.core.database import get_write_session
+from app.core.database import AsyncWriteSession
 from app.models.user import User
 
 logger = structlog.get_logger(__name__)
@@ -141,30 +141,31 @@ async def get_or_create_user_on_login(
 
     This is the safety net for users who registered before the
     DB write was in place, or when the write failed during registration.
-    Uses get_write_session() because it may INSERT.
+    Uses AsyncWriteSession() because it may INSERT.
     """
-    async with get_write_session() as db:
-        user_uuid = uuid.UUID(nhost_user_id)
-        user = await db.get(User, user_uuid)
+    async with AsyncWriteSession() as db:
+        async with db.begin():
+            user_uuid = uuid.UUID(nhost_user_id)
+            user = await db.get(User, user_uuid)
 
-        if user is None:
-            user = User(
-                id=user_uuid,
-                email=email,
-                display_name=display_name or email.split("@")[0],
-                onboarded=False,
-                plan="free",
-            )
-            db.add(user)
-            await db.commit()
-            await db.refresh(user)
-            logger.info(
-                "user_created_on_login",
-                user_id=nhost_user_id,
-                email=email,
-            )
+            if user is None:
+                user = User(
+                    id=user_uuid,
+                    email=email,
+                    display_name=display_name or email.split("@")[0],
+                    onboarded=False,
+                    plan="free",
+                )
+                db.add(user)
+                await db.flush()
+                await db.refresh(user)
+                logger.info(
+                    "user_created_on_login",
+                    user_id=nhost_user_id,
+                    email=email,
+                )
 
-        return user
+            return user
 
 
 async def login_user(email: str, password: str) -> dict:

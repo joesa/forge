@@ -64,6 +64,12 @@ export function useCancelPipeline(id: string) {
   })
 }
 
+export function useRetryPipeline() {
+  return useMutation({
+    mutationFn: (id: string) => pipelineApi.retry(id).then((r) => r.data),
+  })
+}
+
 // ── Build ────────────────────────────────────────────────────────────
 
 export function useBuildStatus(id: string) {

@@ -34,7 +34,7 @@ interface ProjectData {
 export default function DashboardPage() {
   const { data: projectsData, isLoading } = useProjects()
 
-  const projects: ProjectData[] = projectsData?.projects ?? []
+  const projects: ProjectData[] = projectsData?.items ?? []
   const recentProjects = projects.slice(0, 3)
 
   const stats = [

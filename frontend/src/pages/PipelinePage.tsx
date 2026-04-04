@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import AppShell from '@/components/layout/AppShell'
-import { isUuid, usePipelineStatus } from '@/hooks/queries/usePipeline'
+import { isUuid, usePipelineStatus, useRetryPipeline } from '@/hooks/queries/usePipeline'
 import { useProject } from '@/hooks/queries/useProjects'
 
 // Backend stage key → display name
@@ -57,9 +57,11 @@ export default function PipelinePage() {
 
   const { data: status, isLoading } = usePipelineStatus(id)
   const { data: project } = useProject(status?.project_id ? String(status.project_id) : '')
+  const retryPipeline = useRetryPipeline()
 
   const [logEntries, setLogEntries] = useState<LogEntry[]>([])
   const [elapsed, setElapsed] = useState('0:00')
+  const [wsStages, setWsStages] = useState<Record<string, 'pending' | 'running' | 'done' | 'failed'>>({})
   const wsRef = useRef<WebSocket | null>(null)
 
   // WebSocket — subscribe to live pipeline events
@@ -84,9 +86,39 @@ export default function PipelinePage() {
           const stageNum = data.stage as number
           const stageKey = STAGE_KEYS[stageNum - 1]
           const stageName = stageKey ? STAGE_NAMES[stageKey] : `Stage ${stageNum}`
+          const wsStatus = data.status as string
+
+          // Update stage status map from WS events
+          if (stageKey && wsStatus) {
+            setWsStages((prev) => {
+              const next = { ...prev }
+              if (wsStatus === 'completed') {
+                next[stageKey] = 'done'
+                // Mark all prior stages done
+                STAGE_KEYS.slice(0, stageNum - 1).forEach((k) => {
+                  if (!next[k] || next[k] === 'running' || next[k] === 'pending') {
+                    next[k] = 'done'
+                  }
+                })
+              } else if (wsStatus === 'failed') {
+                next[stageKey] = 'failed'
+              } else if (wsStatus === 'running') {
+                next[stageKey] = 'running'
+                // Mark all prior stages done
+                STAGE_KEYS.slice(0, stageNum - 1).forEach((k) => {
+                  if (!next[k] || next[k] === 'pending') {
+                    next[k] = 'done'
+                  }
+                })
+              }
+              return next
+            })
+          }
+
+          // Build log entry
           const lvl: LogEntry['level'] =
-            data.status === 'completed' ? 'success' : data.status === 'failed' ? 'error' : 'info'
-          const msg = data.detail ? `${stageName}: ${data.detail}` : `${stageName} ${data.status}`
+            wsStatus === 'completed' ? 'success' : wsStatus === 'failed' ? 'error' : 'info'
+          const msg = data.detail ? `${stageName}: ${data.detail}` : `${stageName} ${wsStatus}`
           const timeStr = new Date().toLocaleTimeString('en-US', {
             hour12: false,
             hour: '2-digit',
@@ -153,6 +185,10 @@ export default function PipelinePage() {
 
   const stages = STAGE_KEYS.map((key, idx) => {
     const num = idx + 1
+    // Prefer live WS-derived status; fall back to DB-polled status
+    if (wsStages[key]) {
+      return { name: STAGE_NAMES[key], key, status: wsStages[key] }
+    }
     let s: 'done' | 'running' | 'pending' | 'failed'
     if (pipelineStatus === 'completed') {
       s = 'done'
@@ -173,7 +209,7 @@ export default function PipelinePage() {
 
   const csuiteStage = stages[1]
   const agentStatus = csuiteStage?.status ?? 'pending'
-  const completedAgents = agentStatus === 'done' ? 8 : 0
+  const completedAgents = agentStatus === 'done' ? 8 : agentStatus === 'running' ? 4 : 0
 
   const runningStageNum = runningIdx >= 0 ? runningIdx + 1 : 0
 
@@ -363,16 +399,33 @@ export default function PipelinePage() {
 
         {/* Editor button */}
         {status?.project_id && (
-          <div style={{ textAlign: 'center', marginTop: 18 }}>
-            <Link
-              to={`/projects/${status.project_id}/editor`}
-              className="btn btn-primary btn-lg"
-              style={{ textDecoration: 'none' }}
-            >
-              {pipelineStatus === 'completed' ? 'Open Editor →' : 'Skip to Editor →'}
-            </Link>
+          <div style={{ textAlign: 'center', marginTop: 18, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
+              {(pipelineStatus === 'failed' || pipelineStatus === 'error') && (
+                <button
+                  className="btn btn-ghost btn-lg"
+                  disabled={retryPipeline.isPending}
+                  onClick={() => {
+                    retryPipeline.mutate(id, {
+                      onSuccess: (data: { pipeline_id: string }) => {
+                        navigate(`/pipeline/${data.pipeline_id}`)
+                      },
+                    })
+                  }}
+                >
+                  {retryPipeline.isPending ? 'Starting...' : '↺ Retry Build'}
+                </button>
+              )}
+              <Link
+                to={`/projects/${status.project_id}/editor`}
+                className="btn btn-primary btn-lg"
+                style={{ textDecoration: 'none' }}
+              >
+                {pipelineStatus === 'completed' ? 'Open Editor →' : 'Skip to Editor →'}
+              </Link>
+            </div>
             {pipelineStatus !== 'completed' && (
-              <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: 'rgba(232,232,240,0.30)', marginTop: 7 }}>
+              <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: 'rgba(232,232,240,0.30)' }}>
                 Auto-redirects when build completes
               </div>
             )}

@@ -39,7 +39,7 @@ export default function AIProvidersPage() {
   const [connectStatus, setConnectStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle')
 
   // Merge API data with default provider list
-  const apiProviders: Array<{ id: string; provider_name: string; is_connected?: boolean; masked_key?: string }> = data?.providers ?? []
+  const apiProviders: Array<{ id: string; provider_name: string; is_connected?: boolean; masked_key?: string }> = Array.isArray(data) ? data : []
   const providers: ProviderDisplay[] = defaultProviders.map((dp) => {
     const match = apiProviders.find((ap) => ap.provider_name?.toLowerCase() === dp.name.toLowerCase())
     if (match) {

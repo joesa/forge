@@ -286,8 +286,8 @@ async def save_idea(
 @router.post("/ideas/{idea_id}/select", response_model=IdeaSelectResponse)
 async def select_idea(
     idea_id: uuid.UUID,
-    body: IdeaSelectRequest,
     request: Request,
+    body: IdeaSelectRequest | None = None,
     write_session: AsyncSession = Depends(get_write_session),
 ) -> IdeaSelectResponse:
     """Select an idea → creates project + pipeline run."""
@@ -300,7 +300,7 @@ async def select_idea(
         project, pipeline_run = await ideation_service.select_idea(
             idea_id=str(idea_id),
             user_id=str(user_id),
-            framework=body.framework,
+            framework=body.framework if body else None,
             write_session=write_session,
         )
         return IdeaSelectResponse(
@@ -345,11 +345,13 @@ async def regenerate_idea(
 
 @router.post("/generate-direct", response_model=DirectGenerateResponse)
 async def generate_direct(
-    body: DirectGenerateRequest,
     request: Request,
     write_session: AsyncSession = Depends(get_write_session),
+    body: DirectGenerateRequest | None = None,
 ) -> DirectGenerateResponse:
     """Generate ideas directly without questionnaire ('Surprise me')."""
+    if body is None:
+        body = DirectGenerateRequest()
     try:
         user_id = _extract_user_id(request)
     except ValueError as exc:

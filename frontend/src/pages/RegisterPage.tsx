@@ -1,5 +1,7 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useRef } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
+import { Turnstile } from '@marsidev/react-turnstile'
+import type { TurnstileInstance } from '@marsidev/react-turnstile'
 import TopNav from '@/components/layout/TopNav'
 import HexLogo from '@/components/shared/HexLogo'
 import { useAuthStore } from '@/stores/authStore'
@@ -21,6 +23,8 @@ export default function RegisterPage() {
   const [terms, setTerms] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null)
+  const turnstileRef = useRef<TurnstileInstance>(null)
   const navigate = useNavigate()
   const setAuth = useAuthStore((s) => s.setAuth)
 
@@ -61,11 +65,15 @@ export default function RegisterPage() {
       setError('Please accept the Terms of Service.')
       return
     }
+    if (!turnstileToken) {
+      setError('Please complete the human verification.')
+      return
+    }
     setError(null)
     setIsLoading(true)
 
     try {
-      const res = await authApi.register({ display_name: name, email, password })
+      const res = await authApi.register({ display_name: name, email, password }, turnstileToken)
       const data = res.data as {
         user: {
           id: string
@@ -101,6 +109,10 @@ export default function RegisterPage() {
 
       if (axiosErr.response?.status === 409) {
         setError('An account with this email already exists.')
+      } else if (axiosErr.response?.status === 403) {
+        setError('Human verification failed. Please try again.')
+        turnstileRef.current?.reset()
+        setTurnstileToken(null)
       } else {
         // Backend/Nhost unavailable or other error — fall back to dev-mode auth
         console.warn('[FORGE] API register failed, using dev-mode auth fallback:', axiosErr.response?.data?.detail ?? axiosErr.code ?? axiosErr.response?.status)
@@ -274,6 +286,18 @@ export default function RegisterPage() {
                 />
                 I agree to the Terms of Service and Privacy Policy
               </label>
+
+              {/* Turnstile human verification */}
+              <div style={{ display: 'flex', justifyContent: 'center' }}>
+                <Turnstile
+                  ref={turnstileRef}
+                  siteKey={import.meta.env.VITE_TURNSTILE_SITE_KEY}
+                  onSuccess={(token) => setTurnstileToken(token)}
+                  onExpire={() => setTurnstileToken(null)}
+                  onError={() => setTurnstileToken(null)}
+                  options={{ theme: 'dark', size: 'normal' }}
+                />
+              </div>
 
               {/* Submit */}
               <button

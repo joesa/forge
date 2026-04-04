@@ -157,7 +157,10 @@ async def create_provider(
             created_at=provider.created_at,
         )
     except Exception as exc:
-        logger.error("create_provider_failed", error=str(exc))
+        err_str = str(exc)
+        if "uq_user_provider" in err_str or "UniqueViolation" in err_str or "duplicate key" in err_str.lower():
+            return JSONResponse(status_code=409, content={"detail": f"Provider '{body.provider_name}' is already connected."})
+        logger.error("create_provider_failed", error=err_str)
         return JSONResponse(status_code=500, content={"detail": "Failed to create provider"})
 
 

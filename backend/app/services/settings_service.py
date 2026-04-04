@@ -80,8 +80,27 @@ async def create_provider(
     base_url: str | None,
     session: AsyncSession,
 ) -> AIProvider:
-    """Create a new AI provider with encrypted API key."""
+    """Create or update an AI provider (upsert by user+provider_name)."""
     encrypted_key, key_iv, key_tag = encrypt_api_key(api_key)
+
+    # Check if this provider already exists for the user
+    stmt = select(AIProvider).where(
+        AIProvider.user_id == uuid.UUID(user_id),
+        AIProvider.provider_name == provider_name,
+    )
+    result = await session.execute(stmt)
+    existing = result.scalar_one_or_none()
+
+    if existing is not None:
+        existing.encrypted_key = encrypted_key
+        existing.key_iv = key_iv
+        existing.key_tag = key_tag
+        existing.is_connected = True
+        if base_url is not None:
+            existing.base_url = base_url
+        await session.flush()
+        logger.info("ai_provider_updated", provider=provider_name, user_id=user_id)
+        return existing
 
     provider = AIProvider(
         user_id=uuid.UUID(user_id),
@@ -89,6 +108,7 @@ async def create_provider(
         encrypted_key=encrypted_key,
         key_iv=key_iv,
         key_tag=key_tag,
+        is_connected=True,
     )
     session.add(provider)
     await session.flush()

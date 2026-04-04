@@ -144,13 +144,13 @@ def create_ai_router(provider: str | None = None, api_key: str | None = None) ->
     # Auto-detect from settings
     from app.config import settings
 
-    if settings.ANTHROPIC_API_KEY:
-        logger.debug("ai_router.auto_select", provider="anthropic")
-        return AIRouter(provider="anthropic", api_key=settings.ANTHROPIC_API_KEY)
-
     if settings.OPENAI_API_KEY:
         logger.debug("ai_router.auto_select", provider="openai")
         return AIRouter(provider="openai", api_key=settings.OPENAI_API_KEY)
+
+    if settings.ANTHROPIC_API_KEY:
+        logger.debug("ai_router.auto_select", provider="anthropic")
+        return AIRouter(provider="anthropic", api_key=settings.ANTHROPIC_API_KEY)
 
     logger.warning(
         "ai_router.no_api_key",

@@ -356,6 +356,83 @@ async def cancel_pipeline(
     return {"id": str(pipeline_id), "status": "cancelled"}
 
 
+# ── POST /{id}/retry ─────────────────────────────────────────────────
+
+@router.post("/{pipeline_id}/retry", response_model=PipelineRunResponse, status_code=202)
+async def retry_pipeline(
+    pipeline_id: uuid.UUID,
+    request: Request,
+    write_session: AsyncSession = Depends(get_write_session),
+) -> PipelineRunResponse | JSONResponse:
+    """Retry a failed/cancelled pipeline — creates a fresh PipelineRun for the same project."""
+    try:
+        user_id = _extract_user_id(request)
+    except ValueError as exc:
+        return JSONResponse(status_code=401, content={"detail": str(exc)})
+
+    # Look up the original pipeline run
+    result = await write_session.execute(
+        select(PipelineRun).where(
+            PipelineRun.id == pipeline_id,
+            PipelineRun.user_id == user_id,
+        )
+    )
+    original = result.scalar_one_or_none()
+    if not original:
+        return JSONResponse(status_code=404, content={"detail": "Pipeline run not found"})
+
+    if original.status not in (PipelineStatus.failed, PipelineStatus.cancelled):
+        return JSONResponse(
+            status_code=400,
+            content={"detail": f"Pipeline is {original.status.value} — only failed/cancelled runs can be retried"},
+        )
+
+    # Look up the project to rebuild the idea_spec
+    proj_result = await write_session.execute(
+        select(Project).where(Project.id == original.project_id, Project.user_id == user_id)
+    )
+    project = proj_result.scalar_one_or_none()
+    if not project:
+        return JSONResponse(status_code=404, content={"detail": "Project not found"})
+
+    # Create a fresh pipeline run
+    new_run = PipelineRun(
+        project_id=project.id,
+        user_id=user_id,
+        status=PipelineStatus.queued,
+        current_stage=0,
+    )
+    write_session.add(new_run)
+    await write_session.flush()
+    await write_session.refresh(new_run)
+
+    idea_spec = {
+        "title": project.name,
+        "description": project.description or project.name,
+        "features": [],
+        "framework": project.framework.value if project.framework else "react_vite",
+        "target_audience": None,
+    }
+
+    try:
+        run_id = await pipeline_service.start_pipeline(
+            pipeline_id=new_run.id,
+            project_id=project.id,
+            user_id=user_id,
+            idea_spec=idea_spec,
+        )
+        logger.info("pipeline_retried", original_id=str(pipeline_id), new_id=str(new_run.id), trigger_run_id=run_id)
+    except Exception as exc:
+        logger.error("pipeline_retry_start_failed", error=str(exc))
+        return JSONResponse(status_code=500, content={"detail": "Failed to start retry pipeline"})
+
+    return PipelineRunResponse(
+        pipeline_id=new_run.id,
+        status="queued",
+        message="Pipeline retry submitted",
+    )
+
+
 # ── WS /{id}/stream ──────────────────────────────────────────────────
 
 @router.websocket("/{pipeline_id}/stream")

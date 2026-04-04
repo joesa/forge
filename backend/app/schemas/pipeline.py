@@ -18,14 +18,26 @@ from pydantic import BaseModel, Field
 class IdeaSpecInput(BaseModel):
     """The user's idea specification — input to the pipeline."""
 
-    title: str = Field(min_length=1, max_length=256)
-    description: str = Field(min_length=1, max_length=8192)
+    # Prompt-based flow (from NewProjectPage direct submission)
+    prompt: str | None = Field(default=None, max_length=8192)
+    # Ideation flow (from idea selection) — populated from prompt if absent
+    title: str | None = Field(default=None, max_length=256)
+    description: str | None = Field(default=None, max_length=8192)
     features: list[str] = Field(default_factory=list)
     framework: str | None = Field(
         default=None,
         description="One of: nextjs, react_vite, remix, fastapi_react",
     )
     target_audience: str | None = Field(default=None, max_length=1024)
+    cloud_services: list[str] = Field(default_factory=list)
+    ai_enhance: bool = Field(default=True)
+
+    def model_post_init(self, __context: object) -> None:
+        """Populate title/description from prompt when not provided."""
+        if self.prompt and not self.title:
+            self.title = self.prompt.split("\n")[0][:256]
+        if self.prompt and not self.description:
+            self.description = self.prompt[:8192]
 
 
 class PipelineRunRequest(BaseModel):

@@ -7,7 +7,7 @@
 import { useEffect, useRef, useCallback } from 'react'
 import { useEditorStore } from '@/stores/editorStore'
 import type { FileTreeNode } from '@/stores/editorStore'
-import axios from 'axios'
+import { editorApi, projectsApi } from '@/lib/api'
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -18,11 +18,6 @@ interface FileTreeAPINode {
   path: string
   type: 'file' | 'directory'
   children?: FileTreeAPINode[]
-}
-
-interface EditorSessionResponse {
-  id: string
-  sandbox_id: string
 }
 
 /* ------------------------------------------------------------------ */
@@ -61,17 +56,12 @@ export function useEditor(projectId: string) {
     const init = async () => {
       try {
         // 1. Create editor session
-        const sessionRes = await axios.post<EditorSessionResponse>(
-          '/api/v1/editor/sessions',
-          { project_id: projectId },
-        )
+        const sessionRes = await editorApi.createSession(projectId)
         getStore().setSessionId(sessionRes.data.id)
         getStore().setSandboxId(sessionRes.data.sandbox_id)
 
         // 2. Load file tree
-        const treeRes = await axios.get<FileTreeAPINode[]>(
-          `/api/v1/projects/${projectId}/files`,
-        )
+        const treeRes = await projectsApi.getFiles(projectId)
         getStore().setFileTree(treeRes.data as FileTreeNode[])
 
         // 3. Auto-open first file

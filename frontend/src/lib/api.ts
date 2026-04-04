@@ -124,6 +124,7 @@ export const pipelineApi = {
   getStatus: (id: string) => api.get(`/pipeline/${id}/status`),
   getStages: (id: string) => api.get(`/pipeline/${id}/stages`),
   cancel: (id: string) => api.post(`/pipeline/${id}/cancel`),
+  retry: (id: string) => api.post(`/pipeline/${id}/retry`),
   getLogs: (id: string) => api.get(`/pipeline/${id}/logs`),
 }
 

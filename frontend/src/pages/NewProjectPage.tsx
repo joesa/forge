@@ -5,6 +5,12 @@ import { projectsApi, pipelineApi } from '@/lib/api'
 
 const cloudServices = ['Supabase', 'Stripe', 'OpenAI', 'Resend', 'Twilio', 'AWS S3', 'Cloudflare', 'Auth0', 'Pinecone', 'SendGrid']
 const frameworks = ['Next.js', 'React + Vite', 'Remix', 'FastAPI + React']
+const frameworkApiValues: Record<string, string> = {
+  'Next.js': 'nextjs',
+  'React + Vite': 'react_vite',
+  'Remix': 'remix',
+  'FastAPI + React': 'fastapi_react',
+}
 
 export default function NewProjectPage() {
   const [path, setPath] = useState<'prompt' | 'ideate' | null>(null)
@@ -20,18 +26,18 @@ export default function NewProjectPage() {
     setIsSubmitting(true)
     try {
       const name = prompt.trim().split('\n')[0].slice(0, 80)
+      const frameworkValue = frameworkApiValues[selectedFramework] ?? 'react_vite'
       const projectRes = await projectsApi.create({
         name,
         description: prompt,
-        framework: selectedFramework,
-        prompt,
+        framework: frameworkValue,
       })
       const projectId = projectRes.data.id as string
       const pipelineRes = await pipelineApi.run({
         project_id: projectId,
         idea_spec: {
           prompt,
-          framework: selectedFramework,
+          framework: frameworkValue,
           cloud_services: selectedServices,
           ai_enhance: aiEnhance,
         },
