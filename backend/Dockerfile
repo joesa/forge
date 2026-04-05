@@ -45,6 +45,5 @@ CMD ["gunicorn", "app.main:app", \
      "--bind", "0.0.0.0:8000", \
      "--preload", \
      "--timeout", "120", \
-     "--keepalive", "5", \
      "--access-logfile", "-", \
      "--error-logfile", "-"]
