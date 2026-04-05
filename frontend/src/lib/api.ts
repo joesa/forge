@@ -19,7 +19,9 @@ export const api = axios.create({
 
 // ── Request interceptor — attach JWT ────────────────────────────────
 api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
-  const token = useAuthStore.getState().accessToken
+  // Read from tokens.accessToken directly — the `accessToken` getter on
+  // the store state gets frozen by Zustand's Object.assign on first set().
+  const token = useAuthStore.getState().tokens?.accessToken
   if (token && config.headers) {
     config.headers.Authorization = `Bearer ${token}`
   }

@@ -42,10 +42,17 @@ _JWKS_TTL = 3600  # 1 hour
 
 
 async def _fetch_jwks() -> dict[str, Any]:
-    """Fetch JWKS from Nhost, caching in Redis for 1 h."""
-    cached = await get_cache(_JWKS_CACHE_KEY)
-    if cached:
-        return json.loads(cached)
+    """Fetch JWKS from Nhost, caching in Redis for 1 h.
+
+    Redis failures are caught and ignored — we fall back to fetching
+    live from Nhost so that auth still works if Redis is unavailable.
+    """
+    try:
+        cached = await get_cache(_JWKS_CACHE_KEY)
+        if cached:
+            return json.loads(cached)
+    except Exception as cache_exc:
+        logger.warning("jwks_cache_unavailable", error=str(cache_exc))
 
     url = f"{settings.NHOST_AUTH_URL}/.well-known/jwks.json"
     async with httpx.AsyncClient(timeout=10) as client:
@@ -53,7 +60,11 @@ async def _fetch_jwks() -> dict[str, Any]:
         resp.raise_for_status()
         jwks = resp.json()
 
-    await set_cache(_JWKS_CACHE_KEY, json.dumps(jwks), _JWKS_TTL)
+    try:
+        await set_cache(_JWKS_CACHE_KEY, json.dumps(jwks), _JWKS_TTL)
+    except Exception:
+        pass  # Redis unavailable — proceed without caching
+
     return jwks
 
 
