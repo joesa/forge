@@ -134,8 +134,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 token,
                 rsa_key,
                 algorithms=["RS256"],
-                issuer=settings.NHOST_AUTH_URL,
-                options={"verify_aud": False},
+                options={"verify_aud": False, "verify_iss": False},
             )
 
             # Reject expired tokens explicitly (jose also checks, belt-and-suspenders)
