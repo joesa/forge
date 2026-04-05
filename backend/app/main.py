@@ -84,9 +84,12 @@ app.add_middleware(AuthMiddleware)
 app.add_middleware(RateLimitMiddleware)
 
 # 3. CORS
+_cors_origins = [settings.FORGE_FRONTEND_URL]
+if settings.FORGE_EXTRA_ORIGINS:
+    _cors_origins += [o.strip() for o in settings.FORGE_EXTRA_ORIGINS.split(",") if o.strip()]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[settings.FORGE_FRONTEND_URL],
+    allow_origins=_cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

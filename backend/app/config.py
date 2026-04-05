@@ -23,6 +23,8 @@ class Settings(BaseSettings):
     FORGE_ENCRYPTION_KEY: str = ""  # 32-byte base64-encoded key for AES-256-GCM
     FORGE_HMAC_SECRET: str = ""
     FORGE_FRONTEND_URL: str = "http://localhost:5173"
+    # Comma-separated extra origins (e.g. www variant, staging)
+    FORGE_EXTRA_ORIGINS: str = ""
 
     # ── Database ─────────────────────────────────────────────────────
     DATABASE_URL: str = ""
