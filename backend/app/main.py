@@ -8,7 +8,7 @@ Middleware registration order (outermost → innermost):
 import structlog
 from contextlib import asynccontextmanager
 from collections.abc import AsyncIterator
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
@@ -100,6 +100,21 @@ app.add_middleware(LoggingMiddleware)
 
 # 1. Request-ID (outermost — runs first)
 app.add_middleware(RequestIdMiddleware)
+
+
+# ── Global exception handler — ensures CORS headers on 500 responses ─
+# Starlette's ServerErrorMiddleware runs above CORSMiddleware, so raw 500s
+# from unhandled exceptions arrive at the browser without CORS headers.
+# This handler intercepts them inside the app boundary where CORS is applied.
+_logger = structlog.get_logger("forge.exceptions")
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    _logger.error("unhandled_exception", path=str(request.url.path), error=str(exc))
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal server error"},
+    )
 
 
 # ── Health check ─────────────────────────────────────────────────────
