@@ -95,7 +95,8 @@ async def register_user(
     # are permanently linked. If this write fails, the user exists
     # in Nhost but not in our DB — that's caught on next login via
     # get_or_create_user_on_login().
-    nhost_user = nhost_data.get("user", {})
+    # Nhost v4 wraps the user under session.user; fall back to top-level.
+    nhost_user = nhost_data.get("session", {}).get("user") or nhost_data.get("user", {})
     nhost_user_id = nhost_user.get("id")
 
     if nhost_user_id:
@@ -192,8 +193,9 @@ async def login_user(email: str, password: str) -> dict:
 
     nhost_data = resp.json()
 
-    # Ensure user row exists in our DB (safety net for edge cases)
-    nhost_user = nhost_data.get("user", {})
+    # Ensure user row exists in our DB (safety net for edge cases).
+    # Nhost v4 wraps the user under session.user; fall back to top-level.
+    nhost_user = nhost_data.get("session", {}).get("user") or nhost_data.get("user", {})
     if nhost_user.get("id"):
         await get_or_create_user_on_login(
             nhost_user_id=nhost_user["id"],

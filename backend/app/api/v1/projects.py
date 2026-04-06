@@ -38,6 +38,7 @@ from app.schemas.projects import (
     ProjectUpdateRequest,
 )
 from app.services import project_service
+from app.services.auth_service import get_or_create_user_on_login
 
 logger = structlog.get_logger(__name__)
 
@@ -101,6 +102,22 @@ async def create_project(
         user_id = _extract_user_id(request)
     except ValueError as exc:
         return JSONResponse(status_code=401, content={"detail": str(exc)})
+
+    # Safety net: ensure the user row exists before the FK-constrained INSERT.
+    # This handles users who were logged in before the login flow was fixed
+    # (their Nhost token is valid but they have no row in our users table).
+    jwt_payload = getattr(request.state, "user", {})
+    email = jwt_payload.get("email", "")
+    display_name = jwt_payload.get("displayName", "") or jwt_payload.get("display_name", "")
+    if email:
+        try:
+            await get_or_create_user_on_login(
+                nhost_user_id=str(user_id),
+                email=email,
+                display_name=display_name,
+            )
+        except Exception as upsert_exc:
+            logger.warning("user_upsert_on_create_project_failed", error=str(upsert_exc))
 
     try:
         project = await project_service.create_project(
