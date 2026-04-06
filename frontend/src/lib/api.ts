@@ -35,10 +35,13 @@ api.interceptors.response.use(
     const original = error.config
     const currentToken = useAuthStore.getState().tokens?.accessToken
 
-    // Skip refresh/logout cycle for dev-mode tokens — they will always
-    // be rejected by the backend. Let TanStack Query handle the error.
+    // Dev-mode tokens are never valid in production — force a fresh login.
     const isDevToken = currentToken?.startsWith('dev-')
     if (isDevToken) {
+      if (import.meta.env.PROD) {
+        useAuthStore.getState().logout()
+        window.location.href = '/login'
+      }
       return Promise.reject(error)
     }
 

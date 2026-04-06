@@ -158,6 +158,7 @@ async def register(
 @router.post("/login", response_model=AuthTokensResponse)
 async def login(
     body: LoginRequest,
+    read_session: AsyncSession = Depends(get_read_session),
 ) -> AuthTokensResponse | JSONResponse:
     """Authenticate with email and password."""
     try:
@@ -179,17 +180,25 @@ async def login(
     refresh_token_val = nhost_session.get("refreshToken", "")
     nhost_user_id = nhost_user.get("id", "")
 
+    # Fetch actual plan/onboarding status from our DB
+    db_user = None
+    if nhost_user_id:
+        try:
+            db_user = await get_current_user(uuid.UUID(nhost_user_id), read_session)
+        except Exception:
+            pass
+
     return AuthTokensResponse(
         access_token=access_token,
         refresh_token=refresh_token_val,
         user=UserResponse(
             id=uuid.UUID(nhost_user_id) if nhost_user_id else uuid.uuid4(),
-            email=nhost_user.get("email", body.email),
-            display_name=nhost_user.get("displayName"),
-            avatar_url=nhost_user.get("avatarUrl"),
-            onboarded=False,
-            plan="free",
-            created_at=nhost_user.get("createdAt", "2026-01-01T00:00:00Z"),
+            email=db_user.email if db_user else nhost_user.get("email", body.email),
+            display_name=db_user.display_name if db_user else nhost_user.get("displayName"),
+            avatar_url=db_user.avatar_url if db_user else nhost_user.get("avatarUrl"),
+            onboarded=db_user.onboarded if db_user else False,
+            plan=db_user.plan if db_user else "free",
+            created_at=db_user.created_at.isoformat() if db_user else nhost_user.get("createdAt", "2026-01-01T00:00:00Z"),
         ),
     )
 

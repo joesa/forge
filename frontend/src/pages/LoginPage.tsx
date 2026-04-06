@@ -72,8 +72,8 @@ export default function LoginPage() {
       // Only treat 401 as a definitive auth error — everything else falls back to dev mode
       if (axiosErr.response?.status === 401) {
         setError(axiosErr.response.data?.detail ?? 'Invalid email or password.')
-      } else {
-        // Server error or network failure — fall back to dev-mode auth
+      } else if (import.meta.env.DEV) {
+        // Dev-only fallback: bypass auth when backend is unavailable locally
         console.warn('[FORGE] API login failed, using dev-mode auth fallback:', axiosErr.code ?? axiosErr.response?.status)
         setAuth(
           {
@@ -92,6 +92,8 @@ export default function LoginPage() {
           },
         )
         navigate('/dashboard')
+      } else {
+        setError(axiosErr.response?.data?.detail ?? 'Login failed. Please try again.')
       }
     } finally {
       setIsLoading(false)

@@ -20,7 +20,14 @@ interface RequireAuthProps {
  */
 export default function RequireAuth({ children }: RequireAuthProps) {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated())
+  const token = useAuthStore((s) => s.tokens?.accessToken)
   const location = useLocation()
+
+  // In production, dev-mode tokens are not valid — force re-login
+  if (import.meta.env.PROD && token?.startsWith('dev-')) {
+    useAuthStore.getState().logout()
+    return <Navigate to="/login" state={{ from: location }} replace />
+  }
 
   if (!isAuthenticated) {
     return <Navigate to="/login" state={{ from: location }} replace />
