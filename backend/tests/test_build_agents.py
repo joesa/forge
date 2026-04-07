@@ -291,7 +291,8 @@ class TestHotfixAgent:
         )
         assert isinstance(result, HotfixResult)
         assert result.success is False
-        assert result.reason == "not_yet_implemented"
+        # Agent is implemented: it attempts fixes and reports the outcome
+        assert "Attempted fixes" in result.reason
         assert result.changes == []
 
     @pytest.mark.anyio
