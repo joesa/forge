@@ -12,7 +12,8 @@ from sqlalchemy import (
     Integer,
     text,
 )
-from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.dialects.postgresql import JSONB
+from app.core.database import UUIDAsText
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
@@ -26,17 +27,17 @@ class SeedDataRecord(Base):
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
+        UUIDAsText(),
         primary_key=True,
         server_default=text("uuid_generate_v4()"),
     )
     project_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
+        UUIDAsText(),
         ForeignKey("projects.id", ondelete="CASCADE"),
         nullable=False,
     )
     build_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True),
+        UUIDAsText(),
         ForeignKey("builds.id", ondelete="SET NULL"),
     )
     tables_seeded: Mapped[dict | None] = mapped_column(JSONB, server_default=text("'[]'::jsonb"))

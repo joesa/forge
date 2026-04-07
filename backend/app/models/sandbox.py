@@ -17,7 +17,7 @@ from sqlalchemy import (
     String,
     text,
 )
-from sqlalchemy.dialects.postgresql import UUID
+from app.core.database import UUIDAsText
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
@@ -41,16 +41,16 @@ class Sandbox(Base):
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
+        UUIDAsText(),
         primary_key=True,
         server_default=text("uuid_generate_v4()"),
     )
     project_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True),
+        UUIDAsText(),
         ForeignKey("projects.id", ondelete="SET NULL"),
     )
     user_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True),
+        UUIDAsText(),
         ForeignKey("users.id", ondelete="SET NULL"),
     )
     status: Mapped[SandboxStatus] = mapped_column(

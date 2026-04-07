@@ -14,7 +14,8 @@ from sqlalchemy import (
     Text,
     text,
 )
-from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.dialects.postgresql import JSONB
+from app.core.database import UUIDAsText
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
@@ -28,17 +29,17 @@ class Idea(Base):
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
+        UUIDAsText(),
         primary_key=True,
         server_default=text("uuid_generate_v4()"),
     )
     idea_session_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
+        UUIDAsText(),
         ForeignKey("idea_sessions.id", ondelete="CASCADE"),
         nullable=False,
     )
     user_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
+        UUIDAsText(),
         ForeignKey("users.id", ondelete="CASCADE"),
         nullable=False,
     )

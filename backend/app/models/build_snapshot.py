@@ -13,7 +13,8 @@ from sqlalchemy import (
     String,
     text,
 )
-from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.dialects.postgresql import JSONB
+from app.core.database import UUIDAsText
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
@@ -27,17 +28,17 @@ class BuildSnapshot(Base):
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
+        UUIDAsText(),
         primary_key=True,
         server_default=text("uuid_generate_v4()"),
     )
     build_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
+        UUIDAsText(),
         ForeignKey("builds.id", ondelete="CASCADE"),
         nullable=False,
     )
     project_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
+        UUIDAsText(),
         ForeignKey("projects.id", ondelete="CASCADE"),
         nullable=False,
     )
